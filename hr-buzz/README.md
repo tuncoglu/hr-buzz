@@ -28,17 +28,17 @@ What Beat 3.5.13 does, and where it is here:
 
 ## Beyond Beat
 
-- **Heart rate alarm**, the reason this app exists. Above the limit: beep and double buzz, repeated every 5 s, with 3 bpm hysteresis so it doesn't chatter. Works with or without a session running.
+- **Heart rate alarm**, the reason this app exists. Above the limit for 3 readings in a row (so one glitch doesn't set it off): beep and double buzz, repeated every 5 s, with 3 bpm hysteresis so it doesn't chatter. Works with or without a session running. Readings the strap flags as "no skin contact" are ignored. The default limit is 85% of your max heart rate.
 - **Lower limit** (ZoneLock-style band). Only during a session, and only arms once you've reached it, so a warm-up doesn't set it off. Low tone and triple buzz.
 - **Spoken alerts** ("Heart rate 158. Too high, ease off.") when voice guidance is on, at most every 30 s. The beeps keep going.
-- **Dropout and no-data alarms.** If the strap link drops or goes silent for 10 s, it alerts until the strap is back.
+- **Lost-signal alarm.** If heart rate stops for 10 s after it had been coming in, a warbling tone and one long buzz (different from "too high") repeat every 5 s, with "Heart rate signal lost" spoken if voice is on and a chime when it's back. During a session it keeps going until the signal returns; outside one it stops after 30 s, so taking the strap off doesn't beep forever. The phone is kept awake while a session runs, because with the screen off Android otherwise delays the alarm timers.
 - **Remembers your strap** and ignores every other one, so it never locks onto someone else's at the gym or a race. Forget it in Settings.
 - **Skin contact warning** from the strap's contact flag ("wet the electrodes").
 - **Strap battery** shown on the home screen, and on the training screen when ≤ 20%.
 - **Auto-connect** when the app opens (like Beat), unless you last pressed Disconnect.
 - **Km splits** with average HR per km.
 - **Crash-proof recording.** Samples go to disk every second. If Android kills the app mid-run, the session is rebuilt from disk the next time the app starts.
-- **Lock screen.** The training screen shows over the lock screen, and the notification shows live stats there, with Pause/Resume and Finish & save buttons.
+- **Lock screen.** The training screen shows over the lock screen, and the notification (silent, but not "low", which Pixel hides there) shows live stats with Pause/Resume and Finish & save. Finish & save asks you to unlock first.
 - **RR intervals** are recorded (in the session CSV) for later HRV analysis.
 - **Battery prompt.** A one-tap request for unrestricted battery use, so Pixel battery management doesn't kill long runs.
 
@@ -58,7 +58,8 @@ The model proposes; the phone decides. `CoachLogic.guard` checks every plan befo
 - It must be a valid shape. Sports and zones are clamped, and a session can be at most twice your usual length.
 - Readiness from your morning fitness tests caps it: resting HR up ≥ 8 bpm or HRV down 25% makes it easy, smaller rises soften the hard parts.
 - This week's load can't exceed last week's + 10%.
-- Any mention of chest pain, fainting, dizziness, palpitations or breathlessness never reaches the model. The phone answers "stop and see a doctor" and makes today a rest day.
+- Any mention of chest pain or tightness, arm or jaw pain, fainting, dizziness, palpitations, an irregular heartbeat or unusual breathlessness, in the chat or in a session's notes, never reaches the model. The phone answers "stop and see a doctor" and makes today a rest day (for 48 hours after a note like that).
+- Step limits allow 5 bpm over the top of the zone. Zone-1-only steps (walks, cool-downs) keep only your own limit, and when a step lowers the limit you get 90 s to come down before it beeps.
 
 Privacy, as shown in Coach settings:
 
@@ -71,9 +72,9 @@ Model: `deepseek-flash` via `https://api.deepseek.com/chat/completions`, with JS
 
 ## Zones and calories
 
-Zones are Polar's default five: 50–60–70–80–90–100% of HRmax. HRmax is the value you enter in Settings, or 220 − age if you leave it blank (Polar's default). Zones are only as good as that number, so enter your real maximum if you know it.
+Zones are Polar's default five: 50–60–70–80–90–100% of HRmax. HRmax is the value you enter in Settings, or Auto: 220 − age (Polar's default), raised to the highest heart rate you've held for 10 s in a session, once you agree. A new peak is never used without asking, because a strap glitch can read high. Zones are only as good as that number, so enter your real maximum if you know it. If you take beta-blockers or have a heart condition, use the limit your doctor gave you; the first-run screen asks for it.
 
-Calories use the heart-rate formula of Keytel et al. (2005), so set age, sex and weight. The fitness test's VO2max is Uth et al. (2004), 15.3 × HRmax / resting HR. It's an estimate, not a lab test.
+Calories use the heart-rate formula of Keytel et al. (2005), so set age, sex and weight (the app asks on first run). Keytel comes from exercise and runs high at easy heart rates, so below 45% of HRmax a light-activity estimate (2.5 MET) is used instead, blending into Keytel by 60%. The fitness test's VO2max is Uth et al. (2004), 15.3 × HRmax / resting HR. It's an estimate, not a lab test.
 
 ## Verified on device
 
@@ -90,6 +91,10 @@ Pixel 10 Pro XL (Android 17) with a real Polar H10:
 | App killed mid-session (reinstall) | session recovered from disk |
 | Share TCX | share sheet with `hrbuzz_2026-10-21_1001_running.tcx` |
 | Fitness test start / cancel | countdown runs, cancel resets |
+| Lost signal in a Gym session, unplugged, screen off, strap taken off | 30 of 30 alerts on time (5.1 s apart) over 2.5 min, "back" chime when the strap went back on. Before the wake lock: 23 of ~44, gaps up to 19 s |
+| Lost signal outside a session | 6 alerts over 30 s, then quiet; wake lock held only for those 30 s |
+| Strap connected but not worn | no alarm (previously a buzz every 14 s) |
+| Alarm vibration strength | full (alarm usage); previously 51%, scaled as media |
 
 Not yet tested outdoors with real GPS; the distance filter (accuracy ≤ 25 m, jumps > 30 m/s dropped, steps smaller than the fix noise held back) is tuned from the usual phone-GPS behaviour.
 
