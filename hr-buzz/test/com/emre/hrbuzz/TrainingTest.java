@@ -51,6 +51,12 @@ public final class TrainingTest {
         near("keytel female", 9.96, Training.kcalPerMin(150, false, 35, 60), 0.02);
         near("never negative", 0, Training.kcalPerMin(30, true, 20, 40), 0);
         near("no hr, no kcal", 0, Training.kcalPerMin(-1, true, 40, 80), 0);
+        double light = Training.LIGHT_MET * 3.5 * 75 / 200;
+        near("easy hr: light activity", light, Training.kcalPerMin(75, true, 40, 75, 180), 1e-9);
+        near("hard hr: Keytel", Training.kcalPerMin(150, true, 40, 75),
+                Training.kcalPerMin(150, true, 40, 75, 180), 1e-9);
+        double stroll = Training.kcalPerMin(93, true, 40, 75, 180);
+        ok("93 bpm: between the two", stroll > light && stroll < Training.kcalPerMin(93, true, 40, 75));
     }
 
     private static void distance() {

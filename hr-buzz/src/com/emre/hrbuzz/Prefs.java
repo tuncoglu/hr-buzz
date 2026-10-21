@@ -56,7 +56,10 @@ final class Prefs {
         return of(c).getInt("hrMax", 0);
     }
 
-    /** Auto: highest 10-second peak from sessions, never below 220 - age. Default unless entered. */
+    /**
+     * Auto: the highest 10-second peak the person agreed to use, never below 220 - age.
+     * Default unless entered.
+     */
     static boolean hrMaxAuto(Context c) {
         return of(c).getBoolean("hrMaxAuto", hrMaxSetting(c) == 0);
     }
@@ -66,10 +69,45 @@ final class Prefs {
         return of(c).getInt("hrMaxSeen", 0);
     }
 
+    /**
+     * The highest peak agreed to (see {@link #hrMaxPending}). A strap glitch held for 10 s
+     * would otherwise move every zone and limit for a year.
+     */
+    static int hrMaxAccepted(Context c) {
+        SharedPreferences p = of(c);
+        if (!p.contains("hrMaxAccepted")) {
+            // Earlier versions used every peak without asking: keep the one in force.
+            int seen = hrMaxSeen(c);
+            p.edit().putInt("hrMaxAccepted", seen).apply();
+            return seen;
+        }
+        return p.getInt("hrMaxAccepted", 0);
+    }
+
+    /** The peak Auto uses: the agreed one, lower if its session has since been deleted. */
+    static int hrMaxUsedPeak(Context c) {
+        return Math.min(hrMaxAccepted(c), hrMaxSeen(c));
+    }
+
+    /** A new peak that would raise Auto HRmax and has not been answered yet, else 0. */
+    static int hrMaxPending(Context c) {
+        if (!hrMaxAuto(c)) {
+            return 0;
+        }
+        int seen = hrMaxSeen(c);
+        boolean raises = seen > Training.autoHrMax(age(c), hrMaxUsedPeak(c));
+        return raises && seen > of(c).getInt("hrMaxDeclined", 0) ? seen : 0;
+    }
+
+    /** The answer to "use this new peak?": yes moves the zones, no stops asking about it. */
+    static void decideHrMax(Context c, int peak, boolean use) {
+        of(c).edit().putInt(use ? "hrMaxAccepted" : "hrMaxDeclined", peak).apply();
+    }
+
     /** HRmax used for zones. */
     static int hrMax(Context c) {
         if (hrMaxAuto(c)) {
-            return Training.autoHrMax(age(c), hrMaxSeen(c));
+            return Training.autoHrMax(age(c), hrMaxUsedPeak(c));
         }
         int set = hrMaxSetting(c);
         return set > 0 ? set : Training.ageHrMax(age(c));

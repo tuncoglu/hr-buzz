@@ -24,7 +24,6 @@ public class ZoneStripView extends View {
         pointer.setColor(Ui.TEXT);
         num.setTextSize(Ui.dp(c, 12));
         num.setTextAlign(Paint.Align.CENTER);
-        num.setColor(0xFF0E0E10);
         setMinimumHeight(Ui.dp(c, 34));
     }
 
@@ -57,7 +56,8 @@ public class ZoneStripView extends View {
             seg.setAlpha(z == zone ? 255 : 70);
             rect.set(x, top, x + segW, bottom);
             canvas.drawRoundRect(rect, r, r, seg);
-            num.setAlpha(z == zone ? 255 : 150);
+            // Dark on the lit segment; light on the dimmed ones, where dark was unreadable.
+            num.setColor(z == zone ? 0xFF0E0E10 : Ui.TEXT2);
             canvas.drawText(String.valueOf(z), x + segW / 2,
                     (top + bottom) / 2 + num.getTextSize() / 3, num);
         }

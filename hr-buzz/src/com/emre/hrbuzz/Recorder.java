@@ -317,7 +317,7 @@ public class Recorder implements HrManager.Listener {
             session.recording = false;
             SessionStore.save(appContext, session);
             if (stats.peakHr > Prefs.hrMaxSeen(appContext)) {
-                // A new highest peak: Auto max heart rate (and the zones) follow it.
+                // A new highest peak: the home screen asks before Auto max heart rate uses it.
                 Prefs.of(appContext).edit().putInt("hrMaxSeen", stats.peakHr)
                         .putLong("hrMaxSeenAt", id).apply();
             }

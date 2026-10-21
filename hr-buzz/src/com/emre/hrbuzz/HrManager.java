@@ -191,7 +191,7 @@ public class HrManager {
     private HrManager(Context context) {
         this.appContext = context;
         this.prefs = context.getSharedPreferences("hrbuzz", Context.MODE_PRIVATE);
-        this.threshold = prefs.getInt("threshold", 155);
+        this.threshold = prefs.getInt("threshold", Training.defaultAlert(Prefs.hrMax(context)));
         this.alarm = new HrLogic.Alarm(threshold, HYSTERESIS, RE_ALERT_MS, CONFIRM);
         this.alarmOn = prefs.getBoolean("alarmOn", true);
         this.deviceName = prefs.getString("deviceName", null);

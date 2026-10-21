@@ -50,6 +50,11 @@ public final class Training {
      * HRmax when set to Auto: the highest heart rate held for 10 s in a session, but never
      * below the age estimate (an easy month should not drag your zones down).
      */
+    /** Default "alert above" until the person sets one: 85% of HRmax, high in zone 4. */
+    public static int defaultAlert(int hrMax) {
+        return Math.round(hrMax * 0.85f);
+    }
+
     public static int autoHrMax(int age, int seenPeak) {
         return Math.max(ageHrMax(age), seenPeak);
     }
@@ -96,6 +101,27 @@ public final class Training {
                 ? -55.0969 + 0.6309 * bpm + 0.1988 * weightKg + 0.2017 * age
                 : -20.4022 + 0.4472 * bpm - 0.1263 * weightKg + 0.074 * age;
         return Math.max(0, kj / 4.184);
+    }
+
+    /** Light activity, 2.5 MET: what an easy walk costs, whatever the heart rate says. */
+    static final double LIGHT_MET = 2.5;
+
+    /**
+     * Energy expenditure for a session sample. Keytel's formula comes from exercise and runs
+     * high at easy heart rates (6 kcal/min at 93 bpm, a running rate for a stroll), so below
+     * 45% of HRmax a light-activity estimate is used instead, blending into Keytel by 60%.
+     */
+    public static double kcalPerMin(int bpm, boolean male, int age, double weightKg, int hrMax) {
+        if (bpm <= 0) {
+            return 0;
+        }
+        double keytel = kcalPerMin(bpm, male, age, weightKg);
+        if (hrMax <= 0) {
+            return keytel;
+        }
+        double light = LIGHT_MET * 3.5 * weightKg / 200;
+        double w = Math.max(0, Math.min(1, (bpm / (double) hrMax - 0.45) / 0.15));
+        return (1 - w) * light + w * Math.max(light, keytel);
     }
 
     /** Great-circle distance in metres. */
@@ -429,7 +455,7 @@ public final class Training {
                 splitHrWeighted += (double) s.bpm * dt;
                 maxHr = Math.max(maxHr, s.bpm);
                 zoneMs[zone(s.bpm, profile.hrMax)] += dt;
-                kcal += kcalPerMin(s.bpm, profile.male, profile.age, profile.weightKg)
+                kcal += kcalPerMin(s.bpm, profile.male, profile.age, profile.weightKg, profile.hrMax)
                         * dt / 60000.0;
             }
 

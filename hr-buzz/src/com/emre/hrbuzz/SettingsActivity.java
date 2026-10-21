@@ -219,6 +219,7 @@ public class SettingsActivity extends Activity {
         int age = Prefs.age(this);
         int estimate = Training.ageHrMax(age);
         int seen = Prefs.hrMaxSeen(this);
+        int used = Prefs.hrMaxUsedPeak(this);
         String seenOn = seen > 0 ? new SimpleDateFormat("d MMM", Locale.getDefault())
                 .format(new Date(prefs.getLong("hrMaxSeenAt", 0))) : "";
         boolean maxAuto = Prefs.hrMaxAuto(this);
@@ -230,13 +231,13 @@ public class SettingsActivity extends Activity {
                     + "effort." + (seen > 0 ? " Highest held for 10 s in a session: " + seen
                     + " (" + seenOn + ")." : "") + (Prefs.hrMaxSetting(this) == 0
                     ? " Until you enter one: 220 \u2212 age = " + estimate + "." : ""));
-        } else if (seen > estimate) {
-            hrMaxSource.setText("The highest you've held for 10 seconds: " + seen + " on "
-                    + seenOn + ". It rises by itself if a session goes higher.");
+        } else if (used > estimate) {
+            hrMaxSource.setText("The highest you've held for 10 seconds: " + used + ". If a "
+                    + "session goes higher, you'll be asked before it's used.");
         } else {
             hrMaxSource.setText("220 \u2212 age = " + estimate + ", Polar's estimate, until a "
-                    + "session goes higher (held for 10 seconds)."
-                    + (seen > 0 ? " Your highest so far: " + seen + "." : ""));
+                    + "session goes higher (held for 10 seconds) and you agree to use it."
+                    + (seen > 0 ? " Your highest so far: " + seen + " (" + seenOn + ")." : ""));
         }
 
         boolean restAuto = Prefs.restHrAuto(this);
@@ -273,7 +274,8 @@ public class SettingsActivity extends Activity {
         String source;
         if (!Prefs.hrMaxAuto(this) && Prefs.hrMaxSetting(this) > 0) {
             source = " (entered)";
-        } else if (Prefs.hrMaxAuto(this) && Prefs.hrMaxSeen(this) > Training.ageHrMax(Prefs.age(this))) {
+        } else if (Prefs.hrMaxAuto(this)
+                && Prefs.hrMaxUsedPeak(this) > Training.ageHrMax(Prefs.age(this))) {
             source = " (from your sessions)";
         } else {
             source = " (estimated from age)";

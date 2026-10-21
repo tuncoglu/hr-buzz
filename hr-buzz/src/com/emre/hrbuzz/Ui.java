@@ -24,7 +24,8 @@ final class Ui {
 
     static final int TEXT = 0xFFF2F2F2;
     static final int TEXT2 = 0xFFA0A0A8;
-    static final int TEXT3 = 0xFF6E6E76;
+    /** Hints: 5.2:1 on a card, over the 4.5:1 that small text needs. */
+    static final int TEXT3 = 0xFF8E8E93;
 
     private Ui() {
     }

@@ -6,7 +6,10 @@ import android.graphics.Paint;
 import android.graphics.RectF;
 import android.view.View;
 
-/** Time in each heart rate zone, zone 5 at the top like Polar Flow. */
+/**
+ * Time in each heart rate zone, zone 5 at the top like Polar Flow, with the time below zone 1
+ * last so the rows add up to the session's heart rate time.
+ */
 public class ZoneBarsView extends View {
 
     private long[] zoneMs = new long[6];
@@ -25,7 +28,7 @@ public class ZoneBarsView extends View {
         label.setTextSize(Ui.dp(c, 13));
         value.setColor(Ui.TEXT);
         value.setTextSize(Ui.dp(c, 14));
-        setMinimumHeight(Ui.dp(c, 5 * 34));
+        setMinimumHeight(Ui.dp(c, 6 * 34));
     }
 
     public void setData(long[] zoneMs, int hrMax) {
@@ -43,19 +46,25 @@ public class ZoneBarsView extends View {
     @Override
     protected void onDraw(Canvas canvas) {
         long most = 1;
-        for (int z = 1; z <= 5; z++) {
+        for (int z = 0; z <= 5; z++) {
             most = Math.max(most, zoneMs[z]);
         }
-        float rowH = getHeight() / 5f;
+        float rowH = getHeight() / 6f;
         float labelW = Ui.dp(getContext(), 96);
         float valueW = Ui.dp(getContext(), 64);
         float barH = Ui.dp(getContext(), 12);
         float radius = barH / 2;
-        for (int z = 5; z >= 1; z--) {
+        for (int z = 5; z >= 0; z--) {
             float cy = (5 - z) * rowH + rowH / 2;
-            int lo = Training.zoneFloor(z, hrMax);
-            String range = z == 5 ? lo + "+" : lo + "\u2013" + (Training.zoneFloor(z + 1, hrMax) - 1);
-            canvas.drawText("Z" + z + "  " + range, 0, cy + label.getTextSize() / 3, label);
+            String text;
+            if (z == 0) {
+                text = "Below  <" + Training.zoneFloor(1, hrMax);
+            } else {
+                int lo = Training.zoneFloor(z, hrMax);
+                text = "Z" + z + "  " + (z == 5 ? lo + "+"
+                        : lo + "\u2013" + (Training.zoneFloor(z + 1, hrMax) - 1));
+            }
+            canvas.drawText(text, 0, cy + label.getTextSize() / 3, label);
             float x0 = labelW;
             float x1 = getWidth() - valueW;
             rect.set(x0, cy - barH / 2, x1, cy + barH / 2);

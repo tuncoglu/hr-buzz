@@ -61,6 +61,7 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
     private String autoPlannedFor = "";
     /** Today's plan before the last one-tap change, for Undo. */
     private CoachLogic.Plan previousPlan;
+    private boolean asking;
 
     private HrManager hr;
     private Recorder recorder;
@@ -724,7 +725,54 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
         Ui.show(batteryHint, !batteryUnrestricted(this));
         showCoach();
         autoPlan();
+        askProfile();
         Ui.select(sportsRow, java.util.Arrays.asList(Prefs.SPORTS).indexOf(Prefs.sport(this)));
+    }
+
+    /** First run asks for the profile; after that, whether a new peak is a real max. */
+    private void askProfile() {
+        if (asking) {
+            return;
+        }
+        if (ProfileDialog.needed(this)) {
+            asking = true;
+            ProfileDialog.show(this, () -> {
+                asking = false;
+                maxInput.setText(String.valueOf(hr.getUserThreshold()));
+                showBpm(hr.getBpm(), hr.isAbove() || hr.isBelow());
+                showCoach();
+            });
+            return;
+        }
+        int peak = Prefs.hrMaxPending(this);
+        if (peak <= 0) {
+            return;
+        }
+        int now = Prefs.hrMax(this);
+        int usual = Training.ageHrMax(Prefs.age(this));
+        String when = new SimpleDateFormat("d MMM", Locale.getDefault())
+                .format(new Date(Prefs.of(this).getLong("hrMaxSeenAt", 0)));
+        String msg = "A session on " + when + " held " + peak + " bpm for 10 seconds, above "
+                + "the " + now + " your zones and alerts use now. Use " + peak + " as your max "
+                + "heart rate?";
+        if (peak > usual + 15) {
+            msg += "\n\nThat is well above the usual for your age (" + usual + "). A dry strap, "
+                    + "a synthetic shirt or static can make a strap read high: only use it if "
+                    + "you really went all out.";
+        }
+        asking = true;
+        new android.app.AlertDialog.Builder(this)
+                .setTitle("New max heart rate?")
+                .setMessage(msg)
+                .setPositiveButton("Use " + peak, (d, w) -> Prefs.decideHrMax(this, peak, true))
+                .setNegativeButton("Not a real max",
+                        (d, w) -> Prefs.decideHrMax(this, peak, false))
+                .setOnDismissListener(d -> {
+                    asking = false;
+                    showBpm(hr.getBpm(), hr.isAbove() || hr.isBelow());
+                    showCoach();
+                })
+                .show();
     }
 
     @Override
