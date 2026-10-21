@@ -48,6 +48,11 @@ public class Recorder implements HrManager.Listener {
     private static final double MAX_SPEED_MS = 30;
     /** Spoken over/under alerts repeat at most this often (the beeps keep going). */
     private static final long SPOKEN_ALARM_MS = 30000;
+    /**
+     * When a step lowers the upper limit (into a recovery or cool-down), heart rate takes a
+     * minute or more to come down: keep the previous limit this long before tightening.
+     */
+    private static final long STEP_GRACE_MS = 90000;
 
     public interface Listener {
         /** Once a second while recording, and on every state change. */
@@ -100,6 +105,8 @@ public class Recorder implements HrManager.Listener {
     private long lastActiveMs;
     private long inTargetMs;
     private long targetTimedMs;
+    private int pendingHigh;
+    private long tightenAtMs = -1;
 
     private final Runnable tick = new Runnable() {
         @Override
@@ -216,6 +223,7 @@ public class Recorder implements HrManager.Listener {
         lastActiveMs = 0;
         inTargetMs = 0;
         targetTimedMs = 0;
+        tightenAtMs = -1;
         Training.Profile p = Prefs.profile(appContext);
         session = new SessionStore.Summary();
         session.id = System.currentTimeMillis();
@@ -242,7 +250,7 @@ public class Recorder implements HrManager.Listener {
         }
 
         hr.addListener(this);
-        hr.setLowActive(true);
+        hr.setSessionRunning(true);
         if (!hr.isActive()) {
             hr.start();
         }
@@ -264,7 +272,7 @@ public class Recorder implements HrManager.Listener {
         write("-");
         stats.pause();
         anchor = null;
-        hr.setLowActive(false);
+        hr.setSessionRunning(false);
         say("Paused.");
         notifyListeners();
     }
@@ -274,7 +282,7 @@ public class Recorder implements HrManager.Listener {
             return;
         }
         state = RUNNING;
-        hr.setLowActive(true);
+        hr.setSessionRunning(true);
         say("Resumed.");
         notifyListeners();
     }
@@ -291,7 +299,7 @@ public class Recorder implements HrManager.Listener {
         state = IDLE;
         main.removeCallbacks(tick);
         hr.removeListener(this);
-        hr.setLowActive(false);
+        hr.setSessionRunning(false);
         hr.clearSessionLimits();
         stopGps();
         closeWriter();
@@ -389,6 +397,9 @@ public class Recorder implements HrManager.Listener {
         if (idx != stepIndex) {
             stepIndex = idx;
             enterStep(idx);
+        } else if (tightenAtMs >= 0 && stats.activeMs >= tightenAtMs) {
+            tightenAtMs = -1;
+            hr.setSessionLimits(Math.min(pendingHigh, hr.getUserThreshold()), hr.getLowLimit());
         }
         if (idx < plan.steps.size() && s.bpm > 0) {
             CoachLogic.Step st = plan.steps.get(idx);
@@ -405,6 +416,7 @@ public class Recorder implements HrManager.Listener {
     private void enterStep(int idx) {
         int n = plan.steps.size();
         hr.chime();
+        tightenAtMs = -1;
         if (idx >= n) {
             hr.clearSessionLimits();
             sayAlways("Workout complete. Keep going if you like, or finish when you're ready.");
@@ -413,7 +425,14 @@ public class Recorder implements HrManager.Listener {
         }
         CoachLogic.Step st = plan.steps.get(idx);
         int[] limits = CoachLogic.stepLimits(st, session.hrMax, hr.getUserThreshold());
-        hr.setSessionLimits(limits[0], limits[1]);
+        int current = hr.getThreshold();
+        if (limits[0] < current) {
+            pendingHigh = limits[0];
+            tightenAtMs = stats.activeMs + STEP_GRACE_MS;
+            hr.setSessionLimits(current, limits[1]);
+        } else {
+            hr.setSessionLimits(limits[0], limits[1]);
+        }
         String zones = st.zoneLow == st.zoneHigh ? "zone " + st.zoneLow
                 : "zones " + st.zoneLow + " to " + st.zoneHigh;
         sayAlways("Step " + (idx + 1) + " of " + n + ". " + st.name + ", " + zones + ", "
@@ -660,6 +679,8 @@ public class Recorder implements HrManager.Listener {
             say("Heart rate " + bpm + ". Too high, ease off.");
         } else if (event == HrLogic.Alarm.UNDER) {
             say("Heart rate " + bpm + ". Too low, pick it up.");
+        } else if (event == HrLogic.Alarm.LOST) {
+            say("Heart rate signal lost. Check the strap.");
         }
     }
 

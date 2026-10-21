@@ -89,7 +89,8 @@ public final class HrLogic {
      * Decides when to sound the alarm.
      *
      * <ul>
-     *   <li>fires the moment the rate goes above the threshold,</li>
+     *   <li>fires once the rate has been above the threshold for {@code confirm} readings
+     *       in a row, so a single artifact spike does not set it off,</li>
      *   <li>re-fires no more often than {@code reAlertMs} while still over,</li>
      *   <li>only clears once the rate drops {@code hysteresis} below the threshold,
      *       so a reading hovering at the limit does not chatter.</li>
@@ -103,21 +104,32 @@ public final class HrLogic {
         public static final int OVER = 1;
         public static final int BACK = 2;
         public static final int UNDER = 3;
+        /** Not an evaluate() result: the strap link is down, so no limit is being watched. */
+        public static final int LOST = 4;
 
         private int threshold;
         private int low;                  // 0 = no lower limit
         private final int hysteresis;
         private final long reAlertMs;
+        private final int confirm;
 
         private boolean above;
         private boolean below;
         private boolean lowArmed;
+        private int overCount;
+        private int underCount;
         private long lastAlertAt = Long.MIN_VALUE;
 
         public Alarm(int threshold, int hysteresis, long reAlertMs) {
+            this(threshold, hysteresis, reAlertMs, 1);
+        }
+
+        /** @param confirm readings in a row past a limit before it sounds (1 = at once) */
+        public Alarm(int threshold, int hysteresis, long reAlertMs, int confirm) {
             this.threshold = threshold;
             this.hysteresis = hysteresis;
             this.reAlertMs = reAlertMs;
+            this.confirm = Math.max(1, confirm);
         }
 
         /** Changes the limit without losing the latched state. */
@@ -131,6 +143,7 @@ public final class HrLogic {
                 low = value;
                 below = false;
                 lowArmed = false;
+                underCount = 0;
             }
         }
 
@@ -156,6 +169,8 @@ public final class HrLogic {
             above = false;
             below = false;
             lowArmed = false;
+            overCount = 0;
+            underCount = 0;
             lastAlertAt = Long.MIN_VALUE;
         }
 
@@ -182,17 +197,29 @@ public final class HrLogic {
                 }
             }
             if (bpm > threshold) {
+                underCount = 0;
+                if (++overCount < confirm) {
+                    return NONE;
+                }
+                overCount = 0;
                 above = true;
                 lastAlertAt = now;
                 return OVER;
             }
+            overCount = 0;
             if (low > 0) {
                 if (!lowArmed) {
                     lowArmed = bpm >= low;
                 } else if (bpm < low) {
+                    if (++underCount < confirm) {
+                        return NONE;
+                    }
+                    underCount = 0;
                     below = true;
                     lastAlertAt = now;
                     return UNDER;
+                } else {
+                    underCount = 0;
                 }
             }
             return NONE;

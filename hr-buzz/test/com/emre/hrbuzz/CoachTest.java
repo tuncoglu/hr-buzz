@@ -164,13 +164,18 @@ public final class CoachTest {
         z2.zoneLow = 2;
         z2.zoneHigh = 2;
         int[] l = CoachLogic.stepLimits(z2, 180, 155);
-        eq("zone 2 high (top of zone 2)", 125, l[0]);
+        eq("zone 2 high (top of zone 2 + tolerance)", 130, l[0]);
         eq("zone 2 low (floor of zone 2)", 108, l[1]);
 
         CoachLogic.Step warm = new CoachLogic.Step();
         warm.zoneLow = 1;
         warm.zoneHigh = 2;
         eq("warm-up: no low alarm", 0, CoachLogic.stepLimits(warm, 180, 155)[1]);
+
+        CoachLogic.Step walk = new CoachLogic.Step();
+        walk.zoneLow = 1;
+        walk.zoneHigh = 1;
+        eq("zone 1 step: only the ceiling", 155, CoachLogic.stepLimits(walk, 180, 155)[0]);
 
         CoachLogic.Step z45 = new CoachLogic.Step();
         z45.zoneLow = 4;
@@ -264,6 +269,31 @@ public final class CoachTest {
         ok("sore legs is fine", !CoachLogic.redFlag("legs are sore"));
         ok("short run is fine", !CoachLogic.redFlag("I only have 20 minutes"));
         ok("breathing hard is fine", !CoachLogic.redFlag("breathing hard on hills, normal?"));
+        String[] flagged = {"my chest felt tight", "chest pressure on the climb",
+            "pain in my left arm and jaw", "felt breathless", "out of breath walking upstairs",
+            "heart was pounding at rest", "I think I have afib", "my chest is tight",
+            "felt sick and sweaty, chest ache", "HR stuck at 200 while walking",
+            "felt faint at the end", "tightness in my chest", "chest was really tight today"};
+        for (String f : flagged) {
+            ok("flags: " + f, CoachLogic.redFlag(f));
+        }
+        String[] fine = {"I am not dizzy at all", "faint praise from the coach",
+            "no chest pain this time", "chest day, shoulders tight", "chest press felt heavy",
+            "out of breath after the last sprint", "heart was pounding on the last rep",
+            "legs ache from the hills"};
+        for (String f : fine) {
+            ok("fine: " + f, !CoachLogic.redFlag(f));
+        }
+
+        long now = 10L * 24 * 3600 * 1000;
+        CoachLogic.SessionInfo recent = new CoachLogic.SessionInfo();
+        recent.start = now - 3600 * 1000L;
+        recent.notes = "chest felt tight on the hill";
+        CoachLogic.SessionInfo old = new CoachLogic.SessionInfo();
+        old.start = now - 5L * 24 * 3600 * 1000;
+        old.notes = "chest felt tight on the hill";
+        ok("recent symptom note", CoachLogic.recentRedFlag(java.util.Arrays.asList(recent), now));
+        ok("old symptom note", !CoachLogic.recentRedFlag(java.util.Arrays.asList(old), now));
     }
 
     private static void brief() throws Exception {

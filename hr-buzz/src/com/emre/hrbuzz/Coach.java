@@ -249,6 +249,12 @@ public class Coach {
         worker.execute(() -> {
             CoachLogic.Plan p = null;
             String error = null;
+            CoachLogic.Plan rest = symptomRest();
+            if (rest != null) {
+                inFlight.decrementAndGet();
+                deliver(cb, rest, null);
+                return;
+            }
             try {
                 p = planNow(CoachLogic.harderReason(current));
                 if (!CoachLogic.isHarder(current, p)) {
@@ -285,6 +291,10 @@ public class Coach {
 
     /** Same as {@link #refreshPlan} on the calling (background) thread, for the morning job. */
     CoachLogic.Plan planNow(String reason) throws DeepSeek.ApiException {
+        CoachLogic.Plan rest = symptomRest();
+        if (rest != null) {
+            return rest;
+        }
         String key = key();
         if (key == null) {
             throw new DeepSeek.ApiException(401, "Add your DeepSeek API key in Coach settings");
@@ -307,6 +317,20 @@ public class Coach {
         savePlan(p);
         Log.i(TAG, "coach plan: " + p.title + " " + p.totalMinutes() + " min, adjusted "
                 + p.adjusted);
+        return p;
+    }
+
+    /**
+     * A rest day, saved without asking the model, when a session in the last two days has
+     * notes mentioning a red-flag symptom; null otherwise.
+     */
+    private CoachLogic.Plan symptomRest() {
+        if (!CoachLogic.recentRedFlag(sessions(), System.currentTimeMillis())) {
+            return null;
+        }
+        CoachLogic.Plan p = CoachLogic.restPlan(today(), "Your recent session notes mention a "
+                + "symptom. " + CoachLogic.RED_FLAG_REPLY);
+        savePlan(p);
         return p;
     }
 

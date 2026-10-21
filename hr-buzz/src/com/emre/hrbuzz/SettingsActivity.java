@@ -199,9 +199,10 @@ public class SettingsActivity extends Activity {
         batteryButton.setOnClickListener(v -> MainActivity.requestUnrestrictedBattery(this));
 
         section(root, "About");
-        hint(card(root), "HR Buzz " + version() + ". No account, no internet permission: "
-                + "sessions stay on the phone until you export them (TCX/GPX from a "
-                + "session's summary).");
+        hint(card(root), "HR Buzz " + version() + ". No account. Sessions stay on the phone "
+                + "until you export them (TCX/GPX from a session's summary). The internet is "
+                + "used only by the coach, when you turn it on: it sends a summary of your "
+                + "training to DeepSeek.");
 
         setContentView(scroll);
     }

@@ -27,7 +27,13 @@ public class LiveService extends Service implements HrManager.Listener, Recorder
     /** Follow today's coach plan. */
     static final String EXTRA_PLAN = "plan";
 
-    private static final String CHANNEL_ID = "live";
+    /**
+     * Default importance: Android hides "silent" (low) notifications from the lock screen by
+     * default, which is where the live heart rate is wanted mid-run. Importance cannot be raised
+     * on an existing channel, hence the new id; the channel itself makes no sound.
+     */
+    private static final String CHANNEL_ID = "live2";
+    private static final String OLD_CHANNEL_ID = "live";
     private static final int NOTIFICATION_ID = 1;
     private static final long NOTIFY_EVERY_MS = 2000;
 
@@ -56,10 +62,13 @@ public class LiveService extends Service implements HrManager.Listener, Recorder
         super.onCreate();
         notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
         NotificationChannel channel = new NotificationChannel(
-                CHANNEL_ID, "Heart rate", NotificationManager.IMPORTANCE_LOW);
+                CHANNEL_ID, "Heart rate", NotificationManager.IMPORTANCE_DEFAULT);
+        channel.setSound(null, null);
+        channel.enableVibration(false);
         channel.setShowBadge(false);
         channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
         notificationManager.createNotificationChannel(channel);
+        notificationManager.deleteNotificationChannel(OLD_CHANNEL_ID);
         hr = HrManager.get(this);
         recorder = Recorder.get(this);
         hr.addListener(this);
@@ -187,8 +196,10 @@ public class LiveService extends Service implements HrManager.Listener, Recorder
                 b.addAction(new Notification.Action.Builder(null, "Pause",
                         action(ACTION_PAUSE, 3)).build());
             }
+            // Ending the session is the one action that needs the phone unlocked: in a pocket
+            // or from the lock screen, a stray tap would otherwise cut the workout short.
             b.addAction(new Notification.Action.Builder(null, "Finish & save",
-                    action(ACTION_FINISH, 4)).build());
+                    action(ACTION_FINISH, 4)).setAuthenticationRequired(true).build());
         } else {
             if (bpm <= 0) {
                 title = "Waiting for heart rate";

@@ -16,11 +16,14 @@ import android.bluetooth.le.ScanResult;
 import android.bluetooth.le.ScanSettings;
 import android.content.Context;
 import android.content.SharedPreferences;
+import android.media.AudioAttributes;
 import android.media.AudioManager;
 import android.media.ToneGenerator;
 import android.os.Build;
 import android.os.Handler;
 import android.os.Looper;
+import android.os.PowerManager;
+import android.os.VibrationAttributes;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.VibratorManager;
@@ -57,6 +60,10 @@ public class HrManager {
     private static final int HYSTERESIS = 3;
     /** Minimum gap between repeated alarms while still over the limit. */
     private static final long RE_ALERT_MS = 5000;
+    /** Readings in a row past a limit before it sounds: one artifact spike is not enough. */
+    private static final int CONFIRM = 3;
+    /** Outside a session a lost link only warns this long, then waits quietly. */
+    private static final long LOST_ALERT_MS = 30000;
     /** If nothing is found, start scanning again after this long. */
     private static final long RESCAN_MS = 15000;
 
@@ -75,7 +82,10 @@ public class HrManager {
         default void onSample(HrLogic.Measurement m) {
         }
 
-        /** An alarm just sounded: {@link HrLogic.Alarm#OVER}, UNDER or BACK. */
+        /**
+         * An alarm just sounded: {@link HrLogic.Alarm#OVER}, UNDER, LOST (bpm -1) or BACK
+         * (back under a limit, or heart rate back after a lost signal).
+         */
         default void onAlarm(int event, int bpm) {
         }
 
@@ -112,8 +122,14 @@ public class HrManager {
     private String state = "Not connected";
     private boolean above;
     private long lastSampleAt;
-    private boolean linkLost;           // dropped while running; keep alerting until back
+    private boolean linkLost;           // data stopped after it had flowed; cleared by fresh data
+    private long lostAt;
     private long lastLostAlertAt;
+    private boolean lostAlerted;
+    private boolean lostWatching;
+    private boolean hadData;            // this link has delivered a reading
+    private boolean sessionRunning;
+    private PowerManager.WakeLock wakeLock;
     private int battery = -1;
     private boolean contact = true;
     private boolean alarmOn;
@@ -122,17 +138,27 @@ public class HrManager {
     private int overrideHigh;
     private int overrideLow = -1;
 
-    /** Beeps while the strap link is down so a silent dropout cannot go unnoticed. */
+    /**
+     * Sounds the lost-signal alarm while heart rate data is missing, so a silent dropout cannot
+     * go unnoticed: until it is back during a session, for {@link #LOST_ALERT_MS} otherwise
+     * (taking the strap off after a workout should not beep forever).
+     */
     private final Runnable lostWatch = new Runnable() {
         @Override
         public void run() {
-            if (!active || connected || !linkLost) {
+            long now = System.currentTimeMillis();
+            if (!active || !linkLost || (!sessionRunning && now - lostAt > LOST_ALERT_MS)) {
+                lostWatching = false;
+                updateWakeLock();
                 return;
             }
-            long now = System.currentTimeMillis();
-            if (HrLogic.alertDue(lastLostAlertAt, now, RE_ALERT_MS)) {
+            if (alarmOn && HrLogic.alertDue(lastLostAlertAt, now, RE_ALERT_MS)) {
                 lastLostAlertAt = now;
-                alarm(HrLogic.Alarm.OVER);
+                lostAlerted = true;
+                alarm(HrLogic.Alarm.LOST);
+                for (Listener l : listeners) {
+                    l.onAlarm(HrLogic.Alarm.LOST, -1);
+                }
             }
             main.postDelayed(this, 1000);
         }
@@ -166,7 +192,7 @@ public class HrManager {
         this.appContext = context;
         this.prefs = context.getSharedPreferences("hrbuzz", Context.MODE_PRIVATE);
         this.threshold = prefs.getInt("threshold", 155);
-        this.alarm = new HrLogic.Alarm(threshold, HYSTERESIS, RE_ALERT_MS);
+        this.alarm = new HrLogic.Alarm(threshold, HYSTERESIS, RE_ALERT_MS, CONFIRM);
         this.alarmOn = prefs.getBoolean("alarmOn", true);
         this.deviceName = prefs.getString("deviceName", null);
     }
@@ -199,6 +225,10 @@ public class HrManager {
         }
         threshold = value;
         if (overrideHigh <= 0) {
+            alarm.setThreshold(value);
+        } else if (value < overrideHigh) {
+            // A coached step never sits above the person's own ceiling, even mid-step.
+            overrideHigh = value;
             alarm.setThreshold(value);
         }
         prefs.edit().putInt("threshold", value).apply();
@@ -259,12 +289,18 @@ public class HrManager {
     }
 
     /**
-     * The lower limit only makes sense mid-workout (not while you stand around with the strap
-     * on), so the recorder switches it on while a session is running and off when paused.
+     * Set by the recorder while a session is running (not paused). The lower limit only makes
+     * sense mid-workout, a lost signal alerts until it is back, and the CPU is kept awake so
+     * the timers behind both keep running with the screen off.
      */
-    public void setLowActive(boolean value) {
+    public void setSessionRunning(boolean value) {
+        sessionRunning = value;
         lowActive = value;
         alarm.setLow(value ? getLowLimit() : 0);
+        if (value && linkLost) {
+            startLostWatch();
+        }
+        updateWakeLock();
     }
 
     public boolean isBelow() {
@@ -330,6 +366,7 @@ public class HrManager {
         }
         active = true;
         alarm.reset();
+        updateWakeLock();
         connect();
     }
 
@@ -338,11 +375,13 @@ public class HrManager {
         main.removeCallbacks(rescan);
         main.removeCallbacks(lostWatch);
         linkLost = false;
+        lostWatching = false;
         stopScan();
         closeGatt();
         alarm.reset();
         bpm = -1;
         setConnected(false);
+        updateWakeLock();
         if (tone != null) {
             tone.release();
             tone = null;
@@ -386,16 +425,66 @@ public class HrManager {
      * again. Covers both a reported disconnect and a link that went silent without one.
      */
     private void dropLink(String message) {
-        boolean wasConnected = connected;
+        boolean hadReadings = hadData;
         closeGatt();
         setConnected(false);
         announce(message);
         scheduleRescan(3000);
-        if (wasConnected) {
+        // A strap that connects but never sends (lying on a desk) is not a dropout. Nor does
+        // a reconnect that brings no data end one: the clock keeps running from the first loss.
+        if (hadReadings && !linkLost) {
             linkLost = true;
+            lostAt = System.currentTimeMillis();
             lastLostAlertAt = 0;
-            main.removeCallbacks(lostWatch);
-            main.post(lostWatch);
+            lostAlerted = false;
+            startLostWatch();
+        }
+    }
+
+    private void startLostWatch() {
+        main.removeCallbacks(lostWatch);
+        lostWatching = true;
+        updateWakeLock();
+        main.post(lostWatch);
+    }
+
+    /** Heart rate is flowing again after a loss: stop the alarm, and say so if it sounded. */
+    private void linkBack() {
+        linkLost = false;
+        lostWatching = false;
+        main.removeCallbacks(lostWatch);
+        updateWakeLock();
+        if (lostAlerted && alarmOn) {
+            alarm(HrLogic.Alarm.BACK);
+            for (Listener l : listeners) {
+                l.onAlarm(HrLogic.Alarm.BACK, bpm);
+            }
+        }
+        lostAlerted = false;
+    }
+
+    /**
+     * Handler timers stop when the CPU sleeps, and a foreground service does not prevent that:
+     * measured on a Pixel, the lost-signal beep fell from every 5 s to every 10-20 s with the
+     * screen off. Hold a partial wake lock while a session runs or the lost alarm is sounding.
+     */
+    private void updateWakeLock() {
+        boolean want = active && (sessionRunning || lostWatching);
+        if (wakeLock == null) {
+            if (!want) {
+                return;
+            }
+            PowerManager pm = (PowerManager) appContext.getSystemService(Context.POWER_SERVICE);
+            if (pm == null) {
+                return;
+            }
+            wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "HRBuzz:alarm");
+            wakeLock.setReferenceCounted(false);
+        }
+        if (want && !wakeLock.isHeld()) {
+            wakeLock.acquire(12 * 3600 * 1000L);    // a backstop, not a session limit
+        } else if (!want && wakeLock.isHeld()) {
+            wakeLock.release();
         }
     }
 
@@ -505,11 +594,10 @@ public class HrManager {
                     }
                     if (status == BluetoothGatt.GATT_SUCCESS) {
                         lastSampleAt = System.currentTimeMillis();
-                        linkLost = false;
-                        main.removeCallbacks(lostWatch);
                         remember(g.getDevice());
                         setConnected(true);
-                        announce("Live");
+                        // "Live" waits for the first reading; a lost signal ends with it too.
+                        announce("Connected \u2014 waiting for heart rate\u2026");
                         readBattery(g);
                     } else {
                         fail("Could not start heart rate notifications");
@@ -653,8 +741,21 @@ public class HrManager {
         if (heartRate < 0) {
             return;
         }
+        if (!m.contact) {
+            // The strap says its electrodes are off the skin: the number is noise. Leave
+            // lastSampleAt alone so the watchdog treats a long gap as a lost signal.
+            bpm = -1;
+            return;
+        }
         bpm = heartRate;
         lastSampleAt = System.currentTimeMillis();
+        if (!hadData) {
+            hadData = true;
+            announce("Live");
+        }
+        if (linkLost) {
+            linkBack();
+        }
 
         final int event = alarm.evaluate(heartRate, System.currentTimeMillis());
         if (event != HrLogic.Alarm.NONE && alarmOn) {
@@ -690,7 +791,10 @@ public class HrManager {
         alarm(HrLogic.Alarm.BACK);
     }
 
-    /** High: two beeps + double buzz. Low: one long low tone + triple buzz. Back: short ack. */
+    /**
+     * High: two beeps + double buzz. Low: one long low tone + triple buzz. Lost signal: a
+     * warbling tone + one long buzz, so it cannot be mistaken for "too high". Back: short ack.
+     */
     private void alarm(int event) {
         try {
             if (tone == null) {
@@ -700,6 +804,8 @@ public class HrManager {
                 tone.startTone(ToneGenerator.TONE_PROP_BEEP2, 250);
             } else if (event == HrLogic.Alarm.UNDER) {
                 tone.startTone(ToneGenerator.TONE_CDMA_LOW_L, 400);
+            } else if (event == HrLogic.Alarm.LOST) {
+                tone.startTone(ToneGenerator.TONE_SUP_INTERCEPT, 1000);
             } else {
                 tone.startTone(ToneGenerator.TONE_PROP_ACK, 120);
             }
@@ -725,8 +831,23 @@ public class HrManager {
                         ? new long[]{0, 220, 120, 220}
                         : event == HrLogic.Alarm.UNDER
                         ? new long[]{0, 120, 100, 120, 100, 120}
+                        : event == HrLogic.Alarm.LOST
+                        ? new long[]{0, 700}
                         : new long[]{0, 70};
-                vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1));
+                VibrationEffect effect = VibrationEffect.createWaveform(pattern, -1);
+                // Untagged vibrations are scaled by the media haptics setting (measured at
+                // 51% on a Pixel); alarm usage gets the alarm strength instead.
+                boolean urgent = event != HrLogic.Alarm.BACK;
+                if (Build.VERSION.SDK_INT >= 33) {
+                    vibrator.vibrate(effect, VibrationAttributes.createForUsage(urgent
+                            ? VibrationAttributes.USAGE_ALARM
+                            : VibrationAttributes.USAGE_NOTIFICATION));
+                } else {
+                    vibrator.vibrate(effect, new AudioAttributes.Builder()
+                            .setUsage(urgent ? AudioAttributes.USAGE_ALARM
+                                    : AudioAttributes.USAGE_NOTIFICATION)
+                            .build());
+                }
             }
         } catch (RuntimeException e) {
             Log.w(TAG, "vibrate failed", e);
@@ -741,6 +862,7 @@ public class HrManager {
         if (value) {
             main.postDelayed(watchdog, WATCHDOG_MS);
         } else {
+            hadData = false;
             above = false;
             contact = true;
             bpm = -1;

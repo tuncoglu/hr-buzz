@@ -11,6 +11,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
@@ -207,15 +208,59 @@ public final class CoachLogic {
 
     // --------------------------------------------------------------- red flags
 
+    // Up to two words between, e.g. "my chest felt really tight".
+    private static final String GAP = "\\W+(?:\\w+\\W+){0,2}";
     private static final Pattern RED_FLAGS = Pattern.compile(
-            "chest (pain|hurts|tight)|tight chest|pain in (my )?chest|faint|passed out|black(ed)? ?out"
-                    + "|dizz|light.?headed|palpitat|irregular (heart|beat|pulse)|heart (is )?(racing|skipping|fluttering)"
-                    + "|skipped beats?|can.?t (catch my )?breath|short(ness)? of breath|collaps",
+            // chest pain in any word order; "chest day" and chest exercises are training
+            "chest(?! day\\b| press\\b| fly\\b| flies\\b| workout| session)" + GAP
+                    + "(pain|hurt|tight|pressure|ach|heav|discomfort|squeez|burn)"
+                    + "|(pain|pressure|tight\\w*|ache|aching|discomfort|heaviness)" + GAP + "chest"
+                    + "|(pain|ache|aching|numb\\w*|tingl\\w*) in (my )?(left arm|arm and jaw|jaw)"
+                    + "|(left arm|jaw)" + GAP + "(pain|hurt|ach|numb|tingl)"
+                    + "|(felt|feel|feeling|nearly|almost|going to) faint|fainted|fainting|passed out"
+                    + "|black(ed)? ?out|collaps|dizz|light.?headed|cold sweat|clammy"
+                    + "|palpitat|irregular (heart|beat|pulse)|skipped beats?|missed beats?"
+                    + "|heart" + GAP + "(racing|skipping|fluttering|flutters|stopp|irregular)"
+                    + "|(heart|pulse)" + GAP + "pounding (at rest|in bed|at night|lying|sitting)"
+                    + "|(heart rate|hr|pulse)" + GAP + "(stuck|won.?t (come|go) down)"
+                    + "|\\ba-?fib\\b|atrial fib|arrhythm|tachycard"
+                    + "|breathless|can.?t (catch my )?breath|couldn.?t (catch my )?breath"
+                    + "|short(ness)? of breath|struggl\\w* to breathe"
+                    + "|out of breath" + GAP + "(walking|stairs|upstairs|at rest|lying|sitting|in bed)",
             Pattern.CASE_INSENSITIVE);
+    /** "no chest pain", "not dizzy at all": a denial right before the match. */
+    private static final Pattern DENIAL = Pattern.compile(
+            "\\b(no|not|never|without|wasn.?t|didn.?t)\\s+(\\w+\\s+)?$", Pattern.CASE_INSENSITIVE);
 
-    /** True when a message mentions a symptom that must never be coached through. */
+    /**
+     * True when a message mentions a symptom that must never be coached through. Errs towards
+     * yes: a needless rest day costs little, coaching through chest pain could cost a lot.
+     */
     public static boolean redFlag(String text) {
-        return text != null && RED_FLAGS.matcher(text).find();
+        if (text == null) {
+            return false;
+        }
+        Matcher m = RED_FLAGS.matcher(text);
+        while (m.find()) {
+            String before = text.substring(Math.max(0, m.start() - 20), m.start());
+            if (!DENIAL.matcher(before).find()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** Red-flag notes from this long ago still make today a rest day. */
+    static final long RED_FLAG_NOTE_MS = 48 * 3600 * 1000L;
+
+    /** True when a session in the last two days has notes that mention a red-flag symptom. */
+    public static boolean recentRedFlag(List<SessionInfo> sessions, long now) {
+        for (SessionInfo si : sessions) {
+            if (now - si.start <= RED_FLAG_NOTE_MS && redFlag(si.notes)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static final String RED_FLAG_REPLY = "Please stop training for now. Chest pain, "
@@ -452,13 +497,19 @@ public final class CoachLogic {
         }
     }
 
+    /** Bpm allowed over the top of a step's zones before it beeps: zones are a guide. */
+    static final int STEP_TOLERANCE = 5;
+
     /**
      * Alert limits for a step: {high, low} in bpm. High is the top of the step's highest zone
-     * but never above the person's own ceiling; low is the floor of its lowest zone, or 0
-     * (no low alert) for zone-1 steps like warm-ups and cool-downs.
+     * plus {@link #STEP_TOLERANCE}, but never above the person's own ceiling; zone-1-only steps
+     * (warm-up walks, cool-downs, recoveries) keep just the ceiling, since a jog crosses 60%
+     * within a minute. Low is the floor of its lowest zone, or 0 (no low alert) for steps that
+     * start in zone 1.
      */
     public static int[] stepLimits(Step st, int hrMax, int ceiling) {
-        int high = st.zoneHigh >= 5 ? hrMax : Training.zoneFloor(st.zoneHigh + 1, hrMax) - 1;
+        int high = st.zoneHigh >= 5 || st.zoneHigh <= 1 ? hrMax
+                : Training.zoneFloor(st.zoneHigh + 1, hrMax) - 1 + STEP_TOLERANCE;
         if (ceiling > 0) {
             high = Math.min(high, ceiling);
         }
@@ -644,7 +695,9 @@ public final class CoachLogic {
                 o.put("felt", FEELINGS[si.feeling]);
             }
             if (si.notes != null && !si.notes.isEmpty()) {
-                o.put("notes", trim(si.notes, 200));
+                // Symptoms are for a doctor: the model never sees them, the phone rests the day.
+                o.put("notes", redFlag(si.notes) ? "(withheld: mentions a symptom)"
+                        : trim(si.notes, 200));
             }
             if (si.planTitle != null && !si.planTitle.isEmpty()) {
                 o.put("plannedAs", si.planTitle);

@@ -59,8 +59,19 @@ public class SummaryActivity extends Activity {
         if (summary != null && notes != null) {
             String text = notes.getText().toString().trim();
             if (!text.equals(summary.notes)) {
+                boolean newFlag = CoachLogic.redFlag(text) && !CoachLogic.redFlag(summary.notes);
                 summary.notes = text;
                 saveSummary();
+                Coach coach = Coach.get(this);
+                if (newFlag && coach.isEnabled()) {
+                    // Same rule as the coach chat: a symptom ends today's training.
+                    coach.replacePlan(CoachLogic.restPlan("",
+                            "Rest after a symptom in your session notes. "
+                                    + CoachLogic.RED_FLAG_REPLY));
+                    Toast.makeText(this, "Today is now a rest day. Chest pain, fainting, "
+                            + "dizziness or an irregular heartbeat need a doctor, not a coach.",
+                            Toast.LENGTH_LONG).show();
+                }
             }
         }
     }

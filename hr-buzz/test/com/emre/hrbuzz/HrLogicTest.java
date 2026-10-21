@@ -15,6 +15,7 @@ public final class HrLogicTest {
         alertDue();
         measurement();
         lowLimit();
+        confirm();
         if (failures > 0) {
             System.out.println(failures + " check(s) FAILED");
             System.exit(1);
@@ -129,6 +130,27 @@ public final class HrLogicTest {
         eq("reset disarms low", HrLogic.Alarm.NONE, a.evaluate(100, t + 6000));
         a.setLow(0);
         eq("low off", HrLogic.Alarm.NONE, a.evaluate(50, t + 6100));
+    }
+
+    private static void confirm() {
+        HrLogic.Alarm a = new HrLogic.Alarm(155, 3, 5000, 3);
+        a.setLow(120);
+        long t = 0;
+        eq("arm low", HrLogic.Alarm.NONE, a.evaluate(130, t));
+        eq("one spike: quiet", HrLogic.Alarm.NONE, a.evaluate(190, t += 1000));
+        eq("two spikes: quiet", HrLogic.Alarm.NONE, a.evaluate(190, t += 1000));
+        eq("dip resets the count", HrLogic.Alarm.NONE, a.evaluate(140, t += 1000));
+        eq("over 1", HrLogic.Alarm.NONE, a.evaluate(160, t += 1000));
+        eq("over 2", HrLogic.Alarm.NONE, a.evaluate(161, t += 1000));
+        eq("over 3: alarm", HrLogic.Alarm.OVER, a.evaluate(162, t += 1000));
+        eq("repeats need no new confirm", HrLogic.Alarm.OVER, a.evaluate(162, t += 5000));
+        eq("back", HrLogic.Alarm.BACK, a.evaluate(140, t += 1000));
+        eq("under 1", HrLogic.Alarm.NONE, a.evaluate(110, t += 1000));
+        eq("under 2", HrLogic.Alarm.NONE, a.evaluate(110, t += 1000));
+        eq("under 3: alarm", HrLogic.Alarm.UNDER, a.evaluate(110, t += 1000));
+        a.reset();
+        a.setLow(0);
+        eq("after reset, a fresh count", HrLogic.Alarm.NONE, a.evaluate(170, t += 1000));
     }
 
     private static void eq(String what, int expected, int actual) {
