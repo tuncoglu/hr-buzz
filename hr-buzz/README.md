@@ -1,67 +1,119 @@
 # HR Buzz
 
-A ~25 KB Android app that connects to a Bluetooth heart-rate strap (Polar H10, H9, Verity Sense, Garmin, Wahoo…) and beeps + buzzes when your heart rate goes over a limit you set. Nothing else — no account, no cloud, no ads, no analytics, and no network permission at all.
+A ~120 KB Android app for a Bluetooth heart-rate strap (Polar H10, H9, Verity Sense, Garmin, Wahoo…) that does what Polar Beat does: records sessions with GPS, heart rate zones, calories and voice guidance. It also does what Beat can't: beeps and buzzes when your heart rate goes over (or under) a limit you set. One app instead of two. No account, no cloud, no ads, no analytics. The only network use is the optional coach (below), which is off until you set it up.
 
-Built because Polar Beat has no heart-rate alarm: the alert feature lives in Polar's watches (ZoneLock), not the app.
+| Home | Training | Summary | Route & splits |
+|---|---|---|---|
+| ![](screenshot-home.png) | ![](screenshot-training.png) | ![](screenshot-summary.png) | ![](screenshot-route.png) |
 
-## Behaviour
+## Polar Beat parity
 
-- Connects to any device advertising the standard Bluetooth SIG heart rate service (`0x180D`), which the H10 does.
-- Displays live BPM; paints the number red when you're over.
-- **Over the limit** → beep + double buzz, repeated every 5 s while you stay over.
-- **Back under** → short confirmation beep, once.
-- **Hysteresis of 3 bpm:** if your limit is 155, you have to drop to 152 before it considers you "recovered". Stops the alarm chattering when you sit right on the line.
-- Runs as a foreground service, so the link survives the screen going off and the phone being in a pocket. The live BPM also shows in the notification.
-- Reconnects by itself if the strap drops out.
-- **Dropout warning:** if the link to the strap drops while you are running, it beeps and buzzes every 5 s ("Signal lost") until it reconnects or you press Stop.
-- **No-data warning:** if the strap stops sending readings for 10 s (fell off, out of range) it beeps and buzzes every 5 s with "No heart rate data".
-- **Stop** button on the notification disconnects and shuts the service down without opening the app.
+What Beat 3.5.13 does, and where it is here:
+
+| Polar Beat | HR Buzz |
+|---|---|
+| Sport picker + Start | Running, Walking, Cycling, Hiking (GPS) and Gym, Other (no GPS) |
+| Live HR, zone, duration, distance, pace, calories | Training screen: HR in zone colour with % of HRmax, zone pointer, duration, distance, current and average pace, calories, average HR |
+| Voice guidance | Every km, or every 1 / 5 / 10 min: time, distance, pace, HR and zone. Ducks music |
+| Secure pause button | "Hold to pause or finish" (on by default) |
+| Session summary: duration, HR avg/max, calories, distance, pace avg/max | Same, plus training load |
+| HR and pace graphs, map | HR graph over zone bands, pace graph, route drawn to scale and coloured by zone (no map tiles: that would need the network) |
+| How do you feel + training notes | Same |
+| Latest sessions | Home screen list, newest first |
+| Fitness Test (OwnIndex) | Fitness test: 5 min lying still → resting HR, HRV (RMSSD) and a VO2max estimate, with history |
+| HR sensor with battery | Strap name + battery %, remembered strap |
+| Sync to Polar Flow | **Not done.** I couldn't find any way for a third-party app to upload to Flow. Export TCX/GPX instead (Strava, Garmin Connect, TrainingPeaks, Runalyze…) |
+| Running Index, Training Benefit, EnergyPointer, fat-burn % | **Not copied**: they are Polar's own unpublished algorithms. Replaced by transparent equivalents: time in zones, Edwards TRIMP training load, and an effort label derived from where the time went |
+| Save HR in the H10's memory | Not done: it needs Polar's proprietary protocol |
+
+## Beyond Beat
+
+- **Heart rate alarm**, the reason this app exists. Above the limit: beep and double buzz, repeated every 5 s, with 3 bpm hysteresis so it doesn't chatter. Works with or without a session running.
+- **Lower limit** (ZoneLock-style band). Only during a session, and only arms once you've reached it, so a warm-up doesn't set it off. Low tone and triple buzz.
+- **Spoken alerts** ("Heart rate 158. Too high, ease off.") when voice guidance is on, at most every 30 s. The beeps keep going.
+- **Dropout and no-data alarms.** If the strap link drops or goes silent for 10 s, it alerts until the strap is back.
+- **Remembers your strap** and ignores every other one, so it never locks onto someone else's at the gym or a race. Forget it in Settings.
+- **Skin contact warning** from the strap's contact flag ("wet the electrodes").
+- **Strap battery** shown on the home screen, and on the training screen when ≤ 20%.
+- **Auto-connect** when the app opens (like Beat), unless you last pressed Disconnect.
+- **Km splits** with average HR per km.
+- **Crash-proof recording.** Samples go to disk every second. If Android kills the app mid-run, the session is rebuilt from disk the next time the app starts.
+- **Lock screen.** The training screen shows over the lock screen, and the notification shows live stats there, with Pause/Resume and Finish & save buttons.
+- **RR intervals** are recorded (in the session CSV) for later HRV analysis.
+- **Battery prompt.** A one-tap request for unrestricted battery use, so Pixel battery management doesn't kill long runs.
+
+## Coach (optional, DeepSeek)
+
+An LLM coach built to take as little effort as possible. It talks first, and you mostly tap:
+
+- **Today's plan on the home screen.** "Easy run, 35 min", one line on why, its steps as zone-coloured bars, and the alerts it will set. **Start this run** sets everything up; **Not today / Shorter / Harder** re-plan in one tap. Rest days say so.
+- **Guided workouts, offline.** Each step sets that step's alert limits for the session (never above your own "alert above" ceiling), chimes, and is spoken aloud, even with voice guidance off. The training screen shows the step, time left, the target band and % in target. The network is never needed mid-run.
+- **Debrief** on the summary right after Finish: two or three lines with one concrete comparison to your history, and what's next. Older sessions get it on request, so browsing costs nothing.
+- **Ask.** Suggestion chips, typing or speech. Answers that change today come back as an updated plan with **Start now** and **Undo**. "I can do 5 days now" updates the settings.
+- **Morning notification** at your chosen time with today's plan and a Start button (a JobScheduler job, so it waits for a network and survives reboots). Sundays open with a one-line recap.
+- **Setup is four taps** (goal, days a week, minutes, anything to work around). It already knows your zones, profile and last 8 weeks.
+
+The model proposes; the phone decides. `CoachLogic.guard` checks every plan before it can run:
+
+- It must be a valid shape. Sports and zones are clamped, and a session can be at most twice your usual length.
+- Readiness from your morning fitness tests caps it: resting HR up ≥ 8 bpm or HRV down 25% makes it easy, smaller rises soften the hard parts.
+- This week's load can't exceed last week's + 10%.
+- Any mention of chest pain, fainting, dizziness, palpitations or breathlessness never reaches the model. The phone answers "stop and see a doctor" and makes today a rest day.
+
+Privacy, as shown in Coach settings:
+
+- **Sent:** session totals (date, sport, time, distance, average/max HR, minutes per zone, load, feeling, notes), fitness-test resting HR/HRV, and age, sex, weight, max HR and your setup answers.
+- **Never sent:** GPS or location, second-by-second HR, RR data, your name.
+- **Your key:** stored encrypted with an Android keystore key and only sent to `api.deepseek.com` over HTTPS (cleartext is disabled app-wide).
+- **Controls:** *See the last message sent* shows the exact request. *Delete everything the coach remembers* wipes the plan, the conversation, the request log and the debriefs.
+
+Model: `deepseek-flash` via `https://api.deepseek.com/chat/completions`, with JSON output mode and thinking disabled for quick, structured replies. The model is called only at four moments: the morning plan, after Finish, Sunday, and when you ask. You need your own DeepSeek API key (platform.deepseek.com).
+
+## Zones and calories
+
+Zones are Polar's default five: 50–60–70–80–90–100% of HRmax. HRmax is the value you enter in Settings, or 220 − age if you leave it blank (Polar's default). Zones are only as good as that number, so enter your real maximum if you know it.
+
+Calories use the heart-rate formula of Keytel et al. (2005), so set age, sex and weight. The fitness test's VO2max is Uth et al. (2004), 15.3 × HRmax / resting HR. It's an estimate, not a lab test.
 
 ## Verified on device
 
-Tested against a real Polar H10 on a Pixel 10 Pro XL (Android 17):
+Pixel 10 Pro XL (Android 17) with a real Polar H10:
 
 | Check | Result |
 |---|---|
-| Live heart rate from the strap | 74–77 bpm, updating |
-| Alarm on crossing the limit | vibration + tone, UI goes red |
-| Repeat while still over | 4 alerts, 5.7 s apart (matches the 5 s interval) |
-| Alarm with app in background | continued after pressing Home |
-| Alarm with screen off / locked | continued while display dark |
-| Notification | live `77 bpm — over 70` / `Ease off` |
-| Auto-reconnect after strap woke | connected unprompted |
+| Connect, live HR, strap name, battery | 68 bpm, "Polar H10 8C02C525", 100% |
+| Auto-connect on app launch | live within ~5 s |
+| Over-limit alarm, home + training screen | red number / red HR card, tone + buzz, spoken alert |
+| Session record, pause, resume, finish (long press) | saved, summary opens |
+| Voice guidance every 1 min and every km | spoke on the minute and at 1.00 km |
+| GPS distance, pace, km split, route (fed by a test GPS provider at 5 m/s) | 1.36 km, split 3:19 /km (5 m/s = 3:20), route drawn |
+| App killed mid-session (reinstall) | session recovered from disk |
+| Share TCX | share sheet with `hrbuzz_2026-10-21_1001_running.tcx` |
+| Fitness test start / cancel | countdown runs, cancel resets |
 
-The one gotcha worth knowing: **an H10 that isn't being worn doesn't advertise**, so the app will sit on "Searching…" indefinitely. That's the strap's power saving, not a bug — Polar Beat behaves the same way.
-
-See `screenshot-live.png` and `screenshot-alarm.png`.
+Not yet tested outdoors with real GPS; the distance filter (accuracy ≤ 25 m, jumps > 30 m/s dropped, steps smaller than the fix noise held back) is tuned from the usual phone-GPS behaviour.
 
 ## Install
 
-The prebuilt APK is `hr-buzz.apk`.
-
-Over USB:
+The prebuilt APK is `hr-buzz.apk` (not committed; `./build.sh` makes it).
 
 ```bash
 adb install -r hr-buzz.apk
 ```
 
-Or copy the file to the phone and tap it (you'll need to allow "install unknown apps" for your file manager).
-
-On first launch it asks for **Nearby devices** (Bluetooth) and **Notifications**. Both are needed: the first for the strap, the second for the ongoing notification.
+On first launch it asks for **Nearby devices** (Bluetooth) and **Notifications**. **Location** is asked for the first time you start a GPS sport. Without it, sessions record heart rate only.
 
 ## Use
 
-1. Put the strap on (wet the electrodes — dry contact gives junk readings and false alarms).
-2. Open HR Buzz, set the limit (default 155).
-3. Tap **Connect**, pick nothing — it finds the strap itself.
-4. Start your usual running app if you want a recording; both can hold a connection to the H10 at once.
-5. Pocket the phone.
+1. Put the strap on (wet the electrodes).
+2. Open HR Buzz. It finds the strap by itself.
+3. Set **Alert above** (and optionally **Alert below**).
+4. Pick a sport, press **Start**. Pocket the phone.
+5. Hold **Finish** (or tap **Finish & save** in the notification). The summary opens, where you can rate it, add notes or share TCX/GPX.
 
-**Stop the alarm** with the **Stop** button on the notification, or open the app and tap **Disconnect**.
+The first time, open **Settings** and enter age, sex, weight and (ideally) your real max HR.
 
-## Battery
-
-The app holds a foreground service while connected. On a Pixel, check **Settings → Apps → HR Buzz → App battery usage → Unrestricted** if you find Android is reaping it during long runs. Foreground services are usually left alone, but Pixels are aggressive.
+You can still run Polar Beat or Strava alongside it: an H10 with "2 Bluetooth connections" enabled serves both.
 
 ## Build
 
@@ -69,26 +121,40 @@ No Gradle, no Android Studio, no AndroidX. The build is a shell script over the 
 
 ```bash
 ./build.sh          # -> hr-buzz.apk
-./test.sh           # plain-JVM tests for the decode + alarm logic
+./test.sh           # plain-JVM tests: decode, alarm, zones, calories, stats, splits, export
 ```
 
 Requires `ANDROID_HOME` (defaults to `/opt/android-sdk`) and a JDK (`JAVA_HOME`, defaults to `~/.cache/polar-hr-toolchain/jdk`). compileSdk 36, minSdk 31, targetSdk 34.
-
-The build is: `aapt2 compile` → `aapt2 link` → `javac` → `d8` → `zipalign` → `apksigner`, signed with a throwaway debug keystore in `build/`.
 
 ## Layout
 
 | Path | What |
 |---|---|
-| `src/com/emre/hrbuzz/HrLogic.java` | Pure decode + alarm state machine (no Android imports, unit tested) |
-| `src/com/emre/hrbuzz/HrManager.java` | BLE scan/connect/notify, wiring, tone + vibration |
-| `src/com/emre/hrbuzz/MainActivity.java` | One screen: BPM, limit, connect toggle, permissions |
-| `src/com/emre/hrbuzz/LiveService.java` | Foreground service + notification |
-| `test/com/emre/hrbuzz/HrLogicTest.java` | 21 checks covering payload parsing and alarm edge cases |
+| `src/.../HrLogic.java` | Heart rate payload decode (HR, contact, RR) and the high/low alarm state machine. Pure Java, tested |
+| `src/.../Training.java` | Zones, Keytel calories, haversine, session stats, splits, TRIMP, effort label, RMSSD, formatting, CSV sample format. Pure Java, tested |
+| `src/.../Export.java` | TCX and GPX writers. Pure Java, tested |
+| `src/.../HrManager.java` | BLE scan/connect/notify, strap pinning, battery, tone + vibration |
+| `src/.../Recorder.java` | Session recording: 1 Hz samples to disk, GPS distance filter, voice guidance |
+| `src/.../SessionStore.java` | Sessions on disk (`files/sessions/<id>.csv` + `.json`), crash recovery, export files |
+| `src/.../LiveService.java` | Foreground service (connected device + location) and the live notification |
+| `src/.../ExportProvider.java` | Minimal read-only content provider for sharing exports |
+| `src/.../MainActivity.java` | Home: strap, live HR, alert limits, sport, Start, latest sessions |
+| `src/.../TrainingActivity.java` | Live training screen |
+| `src/.../SummaryActivity.java` | Session summary, charts, route, splits, notes, export, delete |
+| `src/.../SettingsActivity.java` | Profile, zones, voice, training screen, alarm test, strap, battery |
+| `src/.../FitnessTestActivity.java` | Resting HR / HRV / VO2max test |
+| `src/.../LineChartView.java`, `ZoneBarsView.java`, `ZoneStripView.java`, `RouteView.java` | Hand-drawn charts |
+| `src/.../Json.java` | Small JSON reader/writer, so the coach logic runs on a plain JVM |
+| `src/.../CoachLogic.java` | Coach brain on the phone: what the model sees, prompts, reading answers, plan checks, readiness, red flags, step limits. Pure Java, tested |
+| `src/.../DeepSeek.java` | Chat-completions client (java.net, JSON mode, retry on empty). Tested against a local stub server |
+| `src/.../Coach.java` | Coach on Android: settings, encrypted key, plan, conversation, morning job scheduling |
+| `src/.../CoachJob.java` | Morning plan job + notification |
+| `src/.../CoachActivity.java`, `CoachSetupActivity.java` | Coach screen (week, next days, conversation) and setup/privacy |
+| `test/...` | `HrLogicTest`, `TrainingTest`, `CoachTest` |
 
 ## Known limits
 
-- Only connects to straps that **advertise** the heart rate service. The H10 does; a few cheap straps don't, and would need an unfiltered scan.
-- One strap per run. No recording, no history, no export — that's what Polar Beat or Strava are for.
-- The alarm tone plays on the alarm stream, so it follows your alarm volume (not media volume) and is audible with media muted.
+- An H10 that isn't being worn doesn't advertise, so the app will sit on "Searching…". Wet the strap.
+- The route has no map underneath. Share the GPX to see it on one.
+- Calories, zones and VO2max are only as good as the profile in Settings.
 - It's a training aid, not a medical device.

@@ -31,8 +31,8 @@ echo "==> linking resources"
     --java gen \
     --min-sdk-version "$MIN_SDK" \
     --target-sdk-version "$TARGET_SDK" \
-    --version-code 1 \
-    --version-name 1.0 \
+    --version-code 3 \
+    --version-name 2.1 \
     "$OUT/res.zip"
 
 echo "==> compiling java"

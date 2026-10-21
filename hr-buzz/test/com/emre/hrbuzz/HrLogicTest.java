@@ -13,6 +13,8 @@ public final class HrLogicTest {
         thresholdChange();
         stale();
         alertDue();
+        measurement();
+        lowLimit();
         if (failures > 0) {
             System.out.println(failures + " check(s) FAILED");
             System.exit(1);
@@ -82,6 +84,51 @@ public final class HrLogicTest {
         ok("first alert is due", HrLogic.alertDue(0, 100000, 5000));
         ok("too soon", !HrLogic.alertDue(100000, 103000, 5000));
         ok("due again", HrLogic.alertDue(100000, 105000, 5000));
+    }
+
+    private static void measurement() {
+        // H10 style: flags 0x16 = contact supported + detected + RR present, 8-bit HR
+        HrLogic.Measurement m = HrLogic.parse(new byte[]{0x16, 70, 0x00, 0x04, 0x33, 0x03});
+        eq("measurement bpm", 70, m.bpm);
+        ok("contact detected", m.contactSupported && m.contact);
+        eq("two RR intervals", 2, m.rrMs.length);
+        eq("RR 1024/1024 s = 1000 ms", 1000, m.rrMs[0]);
+        eq("RR 819/1024 s = 800 ms", 800, m.rrMs[1]);
+
+        // contact supported but not detected
+        HrLogic.Measurement off = HrLogic.parse(new byte[]{0x04, 60});
+        ok("no contact", off.contactSupported && !off.contact);
+
+        // energy expended field sits before RR and must be skipped
+        HrLogic.Measurement e = HrLogic.parse(new byte[]{0x18, 90, 0x10, 0x00, 0x00, 0x02});
+        eq("RR after energy", 1, e.rrMs.length);
+        eq("RR after energy value", 500, e.rrMs[0]);
+
+        // no contact flag at all: assume contact
+        ok("contact unsupported", HrLogic.parse(new byte[]{0x00, 72}).contact);
+    }
+
+    private static void lowLimit() {
+        HrLogic.Alarm a = new HrLogic.Alarm(160, 3, 5000);
+        a.setLow(120);
+        long t = 1000;
+        eq("warm-up below low: quiet (not armed)", HrLogic.Alarm.NONE, a.evaluate(95, t));
+        eq("reaches low: arms", HrLogic.Alarm.NONE, a.evaluate(125, t + 100));
+        eq("drops under: alarm", HrLogic.Alarm.UNDER, a.evaluate(118, t + 200));
+        ok("latched below", a.isBelow());
+        eq("still under, no repeat yet", HrLogic.Alarm.NONE, a.evaluate(115, t + 300));
+        eq("under repeats", HrLogic.Alarm.UNDER, a.evaluate(115, t + 5300));
+        eq("inside hysteresis", HrLogic.Alarm.NONE, a.evaluate(122, t + 5400));
+        eq("recovered", HrLogic.Alarm.BACK, a.evaluate(123, t + 5500));
+        eq("in band: quiet", HrLogic.Alarm.NONE, a.evaluate(140, t + 5600));
+        eq("under again fires at once", HrLogic.Alarm.UNDER, a.evaluate(110, t + 5700));
+        eq("jumps straight over the top", HrLogic.Alarm.OVER, a.evaluate(170, t + 5800));
+        ok("now above, not below", a.isAbove() && !a.isBelow());
+
+        a.reset();
+        eq("reset disarms low", HrLogic.Alarm.NONE, a.evaluate(100, t + 6000));
+        a.setLow(0);
+        eq("low off", HrLogic.Alarm.NONE, a.evaluate(50, t + 6100));
     }
 
     private static void eq(String what, int expected, int actual) {

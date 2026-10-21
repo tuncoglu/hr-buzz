@@ -5,16 +5,27 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
+import android.content.pm.ServiceInfo;
 import android.os.IBinder;
+import android.util.Log;
 
 /**
- * Keeps the process alive (and the BLE link with it) while the screen is off,
- * and mirrors the current heart rate into a persistent notification.
+ * Keeps the process alive (and the BLE link and GPS with it) while the screen is off, and
+ * mirrors heart rate, or the running session, into a persistent notification that is also
+ * readable on the lock screen.
  */
-public class LiveService extends Service implements HrManager.Listener {
+public class LiveService extends Service implements HrManager.Listener, Recorder.Listener {
 
     static final String ACTION_STOP = "com.emre.hrbuzz.STOP";
+    static final String ACTION_RECORD = "com.emre.hrbuzz.RECORD";
+    static final String ACTION_PAUSE = "com.emre.hrbuzz.PAUSE";
+    static final String ACTION_RESUME = "com.emre.hrbuzz.RESUME";
+    static final String ACTION_FINISH = "com.emre.hrbuzz.FINISH";
+    static final String EXTRA_SPORT = "sport";
+    /** Follow today's coach plan. */
+    static final String EXTRA_PLAN = "plan";
 
     private static final String CHANNEL_ID = "live";
     private static final int NOTIFICATION_ID = 1;
@@ -22,10 +33,23 @@ public class LiveService extends Service implements HrManager.Listener {
 
     private NotificationManager notificationManager;
     private HrManager hr;
+    private Recorder recorder;
 
     private int lastBpm = -1;
     private boolean lastAbove;
     private long lastNotifyAt;
+    private int lastRecorderState = Recorder.IDLE;
+
+    /** Starts a recording through the service, so it is in the foreground before GPS starts. */
+    static void record(Context c, String sport) {
+        record(c, sport, false);
+    }
+
+    static void record(Context c, String sport, boolean coached) {
+        c.startForegroundService(new Intent(c, LiveService.class)
+                .setAction(ACTION_RECORD).putExtra(EXTRA_SPORT, sport)
+                .putExtra(EXTRA_PLAN, coached));
+    }
 
     @Override
     public void onCreate() {
@@ -34,22 +58,41 @@ public class LiveService extends Service implements HrManager.Listener {
         NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID, "Heart rate", NotificationManager.IMPORTANCE_LOW);
         channel.setShowBadge(false);
+        channel.setLockscreenVisibility(Notification.VISIBILITY_PUBLIC);
         notificationManager.createNotificationChannel(channel);
         hr = HrManager.get(this);
+        recorder = Recorder.get(this);
         hr.addListener(this);
+        recorder.addListener(this);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
-        if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+        String action = intent == null ? null : intent.getAction();
+        if (ACTION_STOP.equals(action)) {
             // Detach first so stop()'s state callbacks cannot re-post the notification.
             hr.removeListener(this);
+            recorder.removeListener(this);
+            recorder.stop();
             hr.stop();
             stopForeground(STOP_FOREGROUND_REMOVE);
             stopSelf();
             return START_NOT_STICKY;
         }
-        startForeground(NOTIFICATION_ID, build(0, false));
+        if (ACTION_RECORD.equals(action)) {
+            String sport = intent.getStringExtra(EXTRA_SPORT);
+            goForeground(Prefs.usesGps(sport));
+            recorder.start(sport, intent.getBooleanExtra(EXTRA_PLAN, false)
+                    ? Coach.get(this).todayPlan() : null);
+        } else if (ACTION_PAUSE.equals(action)) {
+            recorder.pause();
+        } else if (ACTION_RESUME.equals(action)) {
+            recorder.resume();
+        } else if (ACTION_FINISH.equals(action)) {
+            // Saved; the training screen opens the summary next time it is in front.
+            recorder.stop();
+        }
+        goForeground(recorder.usesGps());
         // If the system restarted us after a kill, pick the strap back up.
         if (!hr.isActive()) {
             hr.start();
@@ -57,9 +100,25 @@ public class LiveService extends Service implements HrManager.Listener {
         return START_STICKY;
     }
 
+    private void goForeground(boolean location) {
+        int types = ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE;
+        if (location) {
+            types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION;
+        }
+        try {
+            startForeground(NOTIFICATION_ID, build(), types);
+        } catch (SecurityException e) {
+            // No location permission: record heart rate without the route.
+            Log.w("HRBuzz", "location foreground denied", e);
+            startForeground(NOTIFICATION_ID, build(),
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE);
+        }
+    }
+
     @Override
     public void onDestroy() {
         hr.removeListener(this);
+        recorder.removeListener(this);
         super.onDestroy();
     }
 
@@ -68,65 +127,144 @@ public class LiveService extends Service implements HrManager.Listener {
         return null;
     }
 
-    private Notification build(int bpm, boolean above) {
+    private PendingIntent action(String action, int code) {
+        return PendingIntent.getService(
+                this, code, new Intent(this, LiveService.class).setAction(action),
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    private Notification build() {
+        int bpm = hr.getBpm();
+        boolean above = hr.isAbove();
+        boolean below = hr.isBelow();
         String title;
         String text;
-        if (bpm <= 0) {
-            title = "Waiting for heart rate";
-            text = "Alert above " + hr.getThreshold() + " bpm";
-        } else if (above) {
-            title = bpm + " bpm \u2014 over " + hr.getThreshold();
-            text = "Ease off";
+        Class<?> open = MainActivity.class;
+        Notification.Builder b = new Notification.Builder(this, CHANNEL_ID);
+
+        if (recorder.isRecording()) {
+            open = TrainingActivity.class;
+            SessionStore.Summary s = recorder.getSession();
+            Training.Stats st = recorder.getStats();
+            StringBuilder t = new StringBuilder(s.sport);
+            if (recorder.getState() == Recorder.PAUSED) {
+                t.append(" \u00b7 paused");
+            }
+            t.append(" \u00b7 ").append(Training.duration(st.activeMs));
+            if (s.gps) {
+                t.append(" \u00b7 ").append(Training.km(st.distanceM)).append(" km");
+            }
+            CoachLogic.Plan plan = recorder.getPlan();
+            int step = recorder.getStepIndex();
+            if (plan != null && step >= 0 && step < plan.steps.size()) {
+                t.append(" \u00b7 ").append(plan.steps.get(step).name).append(' ')
+                        .append(Training.duration(recorder.stepRemainingMs())).append(" left");
+            }
+            title = t.toString();
+            StringBuilder x = new StringBuilder();
+            if (bpm > 0) {
+                int zone = Training.zone(bpm, s.hrMax);
+                x.append(bpm).append(" bpm");
+                if (zone > 0) {
+                    x.append(" \u00b7 Z").append(zone);
+                }
+            } else {
+                x.append("No heart rate");
+            }
+            if (above) {
+                x.append(" \u2014 over ").append(hr.getThreshold());
+            } else if (below) {
+                x.append(" \u2014 under ").append(hr.getLowLimit());
+            }
+            if (s.gps) {
+                x.append(" \u00b7 ").append(Training.pace(st.speed())).append(" /km");
+            }
+            text = x.toString();
+            if (recorder.getState() == Recorder.PAUSED) {
+                b.addAction(new Notification.Action.Builder(null, "Resume",
+                        action(ACTION_RESUME, 2)).build());
+            } else {
+                b.addAction(new Notification.Action.Builder(null, "Pause",
+                        action(ACTION_PAUSE, 3)).build());
+            }
+            b.addAction(new Notification.Action.Builder(null, "Finish & save",
+                    action(ACTION_FINISH, 4)).build());
         } else {
-            title = bpm + " bpm";
-            text = "Alert above " + hr.getThreshold() + " bpm";
+            if (bpm <= 0) {
+                title = "Waiting for heart rate";
+                text = alertText();
+            } else if (above) {
+                title = bpm + " bpm \u2014 over " + hr.getThreshold();
+                text = "Ease off";
+            } else {
+                title = bpm + " bpm";
+                text = alertText();
+            }
+            b.addAction(new Notification.Action.Builder(null, "Stop",
+                    action(ACTION_STOP, 1)).build());
         }
 
-        PendingIntent open = PendingIntent.getActivity(
-                this, 0, new Intent(this, MainActivity.class),
+        PendingIntent content = PendingIntent.getActivity(
+                this, 0, new Intent(this, open),
                 PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
 
-        PendingIntent stop = PendingIntent.getService(
-                this, 1, new Intent(this, LiveService.class).setAction(ACTION_STOP),
-                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
-
-        return new Notification.Builder(this, CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_stat_heart)
+        return b.setSmallIcon(R.drawable.ic_stat_heart)
                 .setContentTitle(title)
                 .setContentText(text)
-                .setContentIntent(open)
-                .addAction(new Notification.Action.Builder(
-                        null, "Stop", stop).build())
+                .setContentIntent(content)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
-                .setCategory(Notification.CATEGORY_SERVICE)
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
+                .setCategory(recorder.isRecording()
+                        ? Notification.CATEGORY_WORKOUT : Notification.CATEGORY_SERVICE)
                 .build();
+    }
+
+    private String alertText() {
+        return hr.isAlarmOn() ? "Alert above " + hr.getThreshold() + " bpm" : "Alert off";
+    }
+
+    private void refresh() {
+        lastNotifyAt = System.currentTimeMillis();
+        notificationManager.notify(NOTIFICATION_ID, build());
     }
 
     @Override
     public void onState(String state) {
-        notificationManager.notify(NOTIFICATION_ID, build(lastBpm, lastAbove));
+        refresh();
     }
 
     @Override
     public void onBpm(int bpm, boolean above) {
         long now = System.currentTimeMillis();
         boolean changed = above != lastAbove || lastBpm < 0;
+        lastBpm = bpm;
+        lastAbove = above;
         if (!changed && now - lastNotifyAt < NOTIFY_EVERY_MS) {
             return;
         }
-        lastBpm = bpm;
-        lastAbove = above;
-        lastNotifyAt = now;
-        notificationManager.notify(NOTIFICATION_ID, build(bpm, above));
+        refresh();
     }
 
     @Override
     public void onConnected(boolean connected) {
         if (!connected) {
-            lastBpm = 0;
+            lastBpm = -1;
             lastAbove = false;
-            notificationManager.notify(NOTIFICATION_ID, build(0, false));
+        }
+        refresh();
+    }
+
+    @Override
+    public void onRecorderUpdate() {
+        int state = recorder.getState();
+        boolean changed = state != lastRecorderState;
+        lastRecorderState = state;
+        if (changed) {
+            // Session started or ended: the foreground type follows (GPS on or off).
+            goForeground(recorder.usesGps());
+        } else if (System.currentTimeMillis() - lastNotifyAt >= NOTIFY_EVERY_MS) {
+            refresh();
         }
     }
 }

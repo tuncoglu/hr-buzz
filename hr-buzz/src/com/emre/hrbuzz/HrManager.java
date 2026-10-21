@@ -48,6 +48,10 @@ public class HrManager {
             UUID.fromString("00002a37-0000-1000-8000-00805f9b34fb");
     private static final UUID CCCD =
             UUID.fromString("00002902-0000-1000-8000-00805f9b34fb");
+    private static final UUID BATTERY_SERVICE =
+            UUID.fromString("0000180f-0000-1000-8000-00805f9b34fb");
+    private static final UUID BATTERY_LEVEL =
+            UUID.fromString("00002a19-0000-1000-8000-00805f9b34fb");
 
     /** Once you are over the limit, stay "over" until you drop this far below it. */
     private static final int HYSTERESIS = 3;
@@ -66,6 +70,18 @@ public class HrManager {
         void onBpm(int bpm, boolean above);
 
         void onConnected(boolean connected);
+
+        /** Every decoded reading, including RR intervals and skin contact. */
+        default void onSample(HrLogic.Measurement m) {
+        }
+
+        /** An alarm just sounded: {@link HrLogic.Alarm#OVER}, UNDER or BACK. */
+        default void onAlarm(int event, int bpm) {
+        }
+
+        /** Strap name, battery or contact changed. */
+        default void onSensor() {
+        }
     }
 
     private static HrManager instance;
@@ -98,6 +114,13 @@ public class HrManager {
     private long lastSampleAt;
     private boolean linkLost;           // dropped while running; keep alerting until back
     private long lastLostAlertAt;
+    private int battery = -1;
+    private boolean contact = true;
+    private boolean alarmOn;
+    private String deviceName;
+    private boolean lowActive;
+    private int overrideHigh;
+    private int overrideLow = -1;
 
     /** Beeps while the strap link is down so a silent dropout cannot go unnoticed. */
     private final Runnable lostWatch = new Runnable() {
@@ -109,7 +132,7 @@ public class HrManager {
             long now = System.currentTimeMillis();
             if (HrLogic.alertDue(lastLostAlertAt, now, RE_ALERT_MS)) {
                 lastLostAlertAt = now;
-                alarm(true);
+                alarm(HrLogic.Alarm.OVER);
             }
             main.postDelayed(this, 1000);
         }
@@ -144,6 +167,8 @@ public class HrManager {
         this.prefs = context.getSharedPreferences("hrbuzz", Context.MODE_PRIVATE);
         this.threshold = prefs.getInt("threshold", 155);
         this.alarm = new HrLogic.Alarm(threshold, HYSTERESIS, RE_ALERT_MS);
+        this.alarmOn = prefs.getBoolean("alarmOn", true);
+        this.deviceName = prefs.getString("deviceName", null);
     }
 
     // ---------------------------------------------------------------- public API
@@ -158,7 +183,13 @@ public class HrManager {
         listeners.remove(listener);
     }
 
+    /** The upper limit in force now: a coached step's, else the person's own. */
     public int getThreshold() {
+        return overrideHigh > 0 ? overrideHigh : threshold;
+    }
+
+    /** The person's own "alert above" setting, whatever a session is doing. */
+    public int getUserThreshold() {
         return threshold;
     }
 
@@ -167,8 +198,99 @@ public class HrManager {
             return;
         }
         threshold = value;
-        alarm.setThreshold(value);
+        if (overrideHigh <= 0) {
+            alarm.setThreshold(value);
+        }
         prefs.edit().putInt("threshold", value).apply();
+    }
+
+    /**
+     * Limits for the current step of a coached workout, for this session only: nothing is
+     * saved, and {@link #clearSessionLimits()} puts the person's own back.
+     *
+     * @param low 0 for no lower alert during this step
+     */
+    public void setSessionLimits(int high, int low) {
+        overrideHigh = high;
+        overrideLow = low;
+        alarm.setThreshold(high);
+        if (lowActive) {
+            alarm.setLow(low);
+        }
+    }
+
+    public void clearSessionLimits() {
+        overrideHigh = 0;
+        overrideLow = -1;
+        alarm.setThreshold(threshold);
+        if (lowActive) {
+            alarm.setLow(getUserLowLimit());
+        }
+    }
+
+    public boolean isAlarmOn() {
+        return alarmOn;
+    }
+
+    /** Turns the over-the-limit sound off without touching recording or the strap link. */
+    public void setAlarmOn(boolean value) {
+        alarmOn = value;
+        prefs.edit().putBoolean("alarmOn", value).apply();
+    }
+
+    /** Lower limit in force now, in bpm, 0 when off. Only sounds while {@link #setLowActive}. */
+    public int getLowLimit() {
+        return overrideLow >= 0 ? overrideLow : getUserLowLimit();
+    }
+
+    /** The person's own "alert below" setting. */
+    public int getUserLowLimit() {
+        return prefs.getInt("lowLimit", 0);
+    }
+
+    public void setLowLimit(int value) {
+        if (value != 0 && (value < 40 || value > 220)) {
+            return;
+        }
+        prefs.edit().putInt("lowLimit", value).apply();
+        if (lowActive && overrideLow < 0) {
+            alarm.setLow(value);
+        }
+    }
+
+    /**
+     * The lower limit only makes sense mid-workout (not while you stand around with the strap
+     * on), so the recorder switches it on while a session is running and off when paused.
+     */
+    public void setLowActive(boolean value) {
+        lowActive = value;
+        alarm.setLow(value ? getLowLimit() : 0);
+    }
+
+    public boolean isBelow() {
+        return connected && alarm.isBelow();
+    }
+
+    /** Strap battery %, or -1 when unknown. */
+    public int getBattery() {
+        return connected ? battery : -1;
+    }
+
+    /** False when the strap says its electrodes have no skin contact. */
+    public boolean hasContact() {
+        return contact;
+    }
+
+    /** Name of the remembered strap, or null when any strap will do. */
+    public String getDeviceName() {
+        return prefs.getString("deviceAddress", null) == null ? null : deviceName;
+    }
+
+    /** Forget the remembered strap so the next search takes the first one it finds. */
+    public void forgetDevice() {
+        prefs.edit().remove("deviceAddress").remove("deviceName").apply();
+        deviceName = null;
+        notifySensor();
     }
 
     /** Latest reading, or -1 when there is none. */
@@ -178,6 +300,11 @@ public class HrManager {
 
     public boolean isAbove() {
         return connected && above;
+    }
+
+    /** Milliseconds since the strap last sent a reading. */
+    public long lastSampleAge() {
+        return System.currentTimeMillis() - lastSampleAt;
     }
 
     /** Below this the over-limit state clears. */
@@ -277,12 +404,20 @@ public class HrManager {
             return;
         }
         stopScan();
+        String target = getDeviceName() != null ? getDeviceName() : "a heart rate strap";
         announce(linkLost ? "Signal lost \u2014 searching\u2026"
-                : "Searching for a heart rate strap\u2026");
+                : "Searching for " + target + "\u2026");
 
-        List<ScanFilter> filters = Collections.singletonList(
-                new ScanFilter.Builder().setServiceUuid(
-                        new android.os.ParcelUuid(HR_SERVICE)).build());
+        // Once a strap has worked, only ever connect to that one: in a gym or a race the
+        // first heart rate strap in range may well be somebody else's.
+        ScanFilter.Builder filter = new ScanFilter.Builder();
+        String pinned = prefs.getString("deviceAddress", null);
+        if (pinned != null && BluetoothAdapter.checkBluetoothAddress(pinned)) {
+            filter.setDeviceAddress(pinned);
+        } else {
+            filter.setServiceUuid(new android.os.ParcelUuid(HR_SERVICE));
+        }
+        List<ScanFilter> filters = Collections.singletonList(filter.build());
         ScanSettings settings = new ScanSettings.Builder()
                 .setScanMode(ScanSettings.SCAN_MODE_LOW_LATENCY)
                 .build();
@@ -372,11 +507,39 @@ public class HrManager {
                         lastSampleAt = System.currentTimeMillis();
                         linkLost = false;
                         main.removeCallbacks(lostWatch);
+                        remember(g.getDevice());
                         setConnected(true);
                         announce("Live");
+                        readBattery(g);
                     } else {
                         fail("Could not start heart rate notifications");
                     }
+                }
+            });
+        }
+
+        // Android 13+
+        @Override
+        public void onCharacteristicRead(BluetoothGatt g, BluetoothGattCharacteristic c,
+                                         final byte[] value, final int status) {
+            main.post(new Runnable() {
+                @Override
+                public void run() {
+                    onRead(g, c, value, status);
+                }
+            });
+        }
+
+        // Android 12 and older
+        @Override
+        @SuppressWarnings("deprecation")
+        public void onCharacteristicRead(BluetoothGatt g, BluetoothGattCharacteristic c,
+                                         final int status) {
+            final byte[] value = c.getValue();
+            main.post(new Runnable() {
+                @Override
+                public void run() {
+                    onRead(g, c, value, status);
                 }
             });
         }
@@ -481,18 +644,27 @@ public class HrManager {
     // -------------------------------------------------------------- measurement
 
     private void handle(byte[] value) {
-        int heartRate = HrLogic.parseBpm(value);
+        final HrLogic.Measurement m = HrLogic.parse(value);
+        if (m.contact != contact) {
+            contact = m.contact;
+            notifySensor();
+        }
+        int heartRate = m.bpm;
         if (heartRate < 0) {
             return;
         }
         bpm = heartRate;
         lastSampleAt = System.currentTimeMillis();
 
-        int event = alarm.evaluate(heartRate, System.currentTimeMillis());
-        if (event == HrLogic.Alarm.OVER) {
-            alarm(true);
-        } else if (event == HrLogic.Alarm.BACK) {
-            alarm(false);
+        final int event = alarm.evaluate(heartRate, System.currentTimeMillis());
+        if (event != HrLogic.Alarm.NONE && alarmOn) {
+            alarm(event);
+            for (Listener l : listeners) {
+                l.onAlarm(event, heartRate);
+            }
+        }
+        for (Listener l : listeners) {
+            l.onSample(m);
         }
 
         final int bpmNow = bpm;
@@ -508,13 +680,26 @@ public class HrManager {
         });
     }
 
-    private void alarm(boolean over) {
+    /** Plays the high alarm once so the volume can be checked. */
+    public void testAlarm() {
+        alarm(HrLogic.Alarm.OVER);
+    }
+
+    /** A short, friendly tone with one buzz: a coached workout moving to its next step. */
+    public void chime() {
+        alarm(HrLogic.Alarm.BACK);
+    }
+
+    /** High: two beeps + double buzz. Low: one long low tone + triple buzz. Back: short ack. */
+    private void alarm(int event) {
         try {
             if (tone == null) {
                 tone = new ToneGenerator(AudioManager.STREAM_ALARM, 100);
             }
-            if (over) {
+            if (event == HrLogic.Alarm.OVER) {
                 tone.startTone(ToneGenerator.TONE_PROP_BEEP2, 250);
+            } else if (event == HrLogic.Alarm.UNDER) {
+                tone.startTone(ToneGenerator.TONE_CDMA_LOW_L, 400);
             } else {
                 tone.startTone(ToneGenerator.TONE_PROP_ACK, 120);
             }
@@ -536,8 +721,10 @@ public class HrManager {
                 }
             }
             if (vibrator != null && vibrator.hasVibrator()) {
-                long[] pattern = over
+                long[] pattern = event == HrLogic.Alarm.OVER
                         ? new long[]{0, 220, 120, 220}
+                        : event == HrLogic.Alarm.UNDER
+                        ? new long[]{0, 120, 100, 120, 100, 120}
                         : new long[]{0, 70};
                 vibrator.vibrate(VibrationEffect.createWaveform(pattern, -1));
             }
@@ -555,6 +742,8 @@ public class HrManager {
             main.postDelayed(watchdog, WATCHDOG_MS);
         } else {
             above = false;
+            contact = true;
+            bpm = -1;
         }
         main.post(new Runnable() {
             @Override
@@ -573,6 +762,48 @@ public class HrManager {
             public void run() {
                 for (Listener l : listeners) {
                     l.onState(state);
+                }
+            }
+        });
+    }
+
+    private void remember(BluetoothDevice device) {
+        deviceName = safeName(device);
+        if (prefs.getString("deviceAddress", null) == null) {
+            prefs.edit().putString("deviceAddress", device.getAddress())
+                    .putString("deviceName", deviceName).apply();
+        }
+        notifySensor();
+    }
+
+    private void readBattery(BluetoothGatt g) {
+        BluetoothGattService service = g.getService(BATTERY_SERVICE);
+        BluetoothGattCharacteristic level =
+                service == null ? null : service.getCharacteristic(BATTERY_LEVEL);
+        if (level == null) {
+            return;
+        }
+        try {
+            g.readCharacteristic(level);
+        } catch (SecurityException ignored) {
+        }
+    }
+
+    private void onRead(BluetoothGatt g, BluetoothGattCharacteristic c, byte[] value, int status) {
+        if (g != gatt || status != BluetoothGatt.GATT_SUCCESS || value == null
+                || value.length < 1 || !BATTERY_LEVEL.equals(c.getUuid())) {
+            return;
+        }
+        battery = value[0] & 0xFF;
+        notifySensor();
+    }
+
+    private void notifySensor() {
+        main.post(new Runnable() {
+            @Override
+            public void run() {
+                for (Listener l : listeners) {
+                    l.onSensor();
                 }
             }
         });

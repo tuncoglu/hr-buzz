@@ -88,6 +88,8 @@ A second-hand Polar Pacer or Unite paired to the H10 gives you ZoneLock and a pr
 
 Rather than install someone else's app, there's now a purpose-built one in `hr-buzz/` — ~25 KB, no dependencies, no network permission, beeps and buzzes above a limit you set and runs as a foreground service so it survives a pocketed phone. See `hr-buzz/README.md`. It solves the gap above with the same approach as Heart Alert (second BLE client alongside your recorder), without the third-party app.
 
+Since 21 October 2026 it also records sessions itself: GPS distance/pace/route, zones, calories, voice guidance, summaries, a fitness test, and TCX/GPX export. It replaces Polar Beat rather than running next to it. The only Beat features it lacks are Polar Flow sync and Polar's proprietary scores (Running Index, Training Benefit).
+
 ---
 
 ## Sources

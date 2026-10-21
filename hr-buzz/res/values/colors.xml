@@ -1,4 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="icon_bg">#FFFFFFFF</color>
+
+    <color name="bg">#FF0E0E10</color>
+    <color name="card">#FF1C1C1F</color>
+    <color name="card2">#FF2A2A2E</color>
+    <color name="text">#FFF2F2F2</color>
+    <color name="text2">#FFA0A0A8</color>
+    <color name="text3">#FF6E6E76</color>
+    <color name="accent">#FFE0102F</color>
+    <color name="accent_pressed">#FF9E0B21</color>
+    <color name="danger">#FFFF453A</color>
 </resources>

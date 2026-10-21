@@ -38,6 +38,43 @@ public final class HrLogic {
         return bpm;
     }
 
+    /** One decoded notification: rate, skin contact and any beat-to-beat (RR) intervals. */
+    public static final class Measurement {
+        public int bpm = -1;
+        /** The strap reports contact at all; when false, {@link #contact} means nothing. */
+        public boolean contactSupported;
+        public boolean contact = true;
+        public int[] rrMs = new int[0];
+    }
+
+    /**
+     * Full decode of a 0x2A37 payload, including flags bit1/bit2 (contact detected /
+     * supported) and RR intervals (bit4, uint16 in 1/1024 s, after the optional energy field).
+     */
+    public static Measurement parse(byte[] value) {
+        Measurement m = new Measurement();
+        m.bpm = parseBpm(value);
+        if (value == null || value.length < 2) {
+            return m;
+        }
+        int flags = value[0] & 0xFF;
+        m.contactSupported = (flags & 0x04) != 0;
+        m.contact = !m.contactSupported || (flags & 0x02) != 0;
+        int offset = (flags & 0x01) != 0 ? 3 : 2;
+        if ((flags & 0x08) != 0) {
+            offset += 2;
+        }
+        if ((flags & 0x10) != 0 && offset < value.length) {
+            int count = (value.length - offset) / 2;
+            m.rrMs = new int[count];
+            for (int i = 0; i < count; i++) {
+                int raw = (value[offset + 2 * i] & 0xFF) | ((value[offset + 2 * i + 1] & 0xFF) << 8);
+                m.rrMs[i] = Math.round(raw * 1000f / 1024f);
+            }
+        }
+        return m;
+    }
+
     /** True when no reading has arrived for {@code timeoutMs} (strap fell off or out of range). */
     public static boolean isStale(long lastSampleAt, long now, long timeoutMs) {
         return now - lastSampleAt >= timeoutMs;
@@ -56,6 +93,8 @@ public final class HrLogic {
      *   <li>re-fires no more often than {@code reAlertMs} while still over,</li>
      *   <li>only clears once the rate drops {@code hysteresis} below the threshold,
      *       so a reading hovering at the limit does not chatter.</li>
+     *   <li>optionally does the same for a lower limit, which only arms once the rate has
+     *       first reached it, so a warm-up does not set it off.</li>
      * </ul>
      */
     public static final class Alarm {
@@ -63,12 +102,16 @@ public final class HrLogic {
         public static final int NONE = 0;
         public static final int OVER = 1;
         public static final int BACK = 2;
+        public static final int UNDER = 3;
 
         private int threshold;
+        private int low;                  // 0 = no lower limit
         private final int hysteresis;
         private final long reAlertMs;
 
         private boolean above;
+        private boolean below;
+        private boolean lowArmed;
         private long lastAlertAt = Long.MIN_VALUE;
 
         public Alarm(int threshold, int hysteresis, long reAlertMs) {
@@ -82,40 +125,83 @@ public final class HrLogic {
             threshold = value;
         }
 
+        /** Sets the lower limit; 0 turns it off. Re-arms so it waits for the rate to reach it. */
+        public void setLow(int value) {
+            if (value != low) {
+                low = value;
+                below = false;
+                lowArmed = false;
+            }
+        }
+
         /** The rate at or below which an over-the-limit state clears. */
         public int clearBelow() {
             return threshold - hysteresis;
+        }
+
+        /** The rate at or above which an under-the-limit state clears. */
+        public int clearAbove() {
+            return low + hysteresis;
         }
 
         public boolean isAbove() {
             return above;
         }
 
+        public boolean isBelow() {
+            return below;
+        }
+
         public void reset() {
             above = false;
+            below = false;
+            lowArmed = false;
             lastAlertAt = Long.MIN_VALUE;
         }
 
         /**
-         * @return {@link #OVER} to sound the high alarm, {@link #BACK} when the rate
-         *         has recovered, {@link #NONE} to stay quiet
+         * @return {@link #OVER} to sound the high alarm, {@link #UNDER} for the low one,
+         *         {@link #BACK} when the rate has recovered, {@link #NONE} to stay quiet
          */
         public int evaluate(int bpm, long now) {
-            if (!above) {
-                if (bpm > threshold) {
-                    above = true;
-                    lastAlertAt = now;
-                    return OVER;
+            if (above) {
+                if (bpm <= threshold - hysteresis) {
+                    above = false;
+                    return BACK;
                 }
-                return NONE;
+                return repeat(now, OVER);
             }
-            if (bpm <= threshold - hysteresis) {
-                above = false;
-                return BACK;
+            if (below) {
+                if (bpm > threshold) {
+                    below = false;          // straight past the band: report the high alarm
+                } else if (low <= 0 || bpm >= low + hysteresis) {
+                    below = false;
+                    return BACK;
+                } else {
+                    return repeat(now, UNDER);
+                }
             }
-            if (now - lastAlertAt >= reAlertMs) {
+            if (bpm > threshold) {
+                above = true;
                 lastAlertAt = now;
                 return OVER;
+            }
+            if (low > 0) {
+                if (!lowArmed) {
+                    lowArmed = bpm >= low;
+                } else if (bpm < low) {
+                    below = true;
+                    lastAlertAt = now;
+                    return UNDER;
+                }
+            }
+            return NONE;
+        }
+
+        private int repeat(long now, int event) {
+            if (now - lastAlertAt >= reAlertMs) {
+                lastAlertAt = now;
+                return event;
             }
             return NONE;
         }
