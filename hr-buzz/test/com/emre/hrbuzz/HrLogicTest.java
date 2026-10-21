@@ -12,6 +12,7 @@ public final class HrLogicTest {
         alarm();
         thresholdChange();
         stale();
+        alertDue();
         if (failures > 0) {
             System.out.println(failures + " check(s) FAILED");
             System.exit(1);
@@ -75,6 +76,12 @@ public final class HrLogicTest {
         ok("fresh sample", !HrLogic.isStale(1000, 5000, 10000));
         ok("exactly at timeout", HrLogic.isStale(1000, 11000, 10000));
         ok("long silence", HrLogic.isStale(1000, 60000, 10000));
+    }
+
+    private static void alertDue() {
+        ok("first alert is due", HrLogic.alertDue(0, 100000, 5000));
+        ok("too soon", !HrLogic.alertDue(100000, 103000, 5000));
+        ok("due again", HrLogic.alertDue(100000, 105000, 5000));
     }
 
     private static void eq(String what, int expected, int actual) {

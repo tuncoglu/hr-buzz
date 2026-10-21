@@ -96,7 +96,24 @@ public class HrManager {
     private String state = "Not connected";
     private boolean above;
     private long lastSampleAt;
-    private long lastStaleAlertAt;
+    private boolean linkLost;           // dropped while running; keep alerting until back
+    private long lastLostAlertAt;
+
+    /** Beeps while the strap link is down so a silent dropout cannot go unnoticed. */
+    private final Runnable lostWatch = new Runnable() {
+        @Override
+        public void run() {
+            if (!active || connected || !linkLost) {
+                return;
+            }
+            long now = System.currentTimeMillis();
+            if (HrLogic.alertDue(lastLostAlertAt, now, RE_ALERT_MS)) {
+                lastLostAlertAt = now;
+                alarm(true);
+            }
+            main.postDelayed(this, 1000);
+        }
+    };
 
     private final Runnable watchdog = new Runnable() {
         @Override
@@ -105,11 +122,9 @@ public class HrManager {
                 return;
             }
             long now = System.currentTimeMillis();
-            if (HrLogic.isStale(lastSampleAt, now, STALE_MS)
-                    && now - lastStaleAlertAt >= RE_ALERT_MS) {
-                lastStaleAlertAt = now;
-                announce("No heart rate data \u2014 check the strap");
-                alarm(true);
+            if (HrLogic.isStale(lastSampleAt, now, STALE_MS)) {
+                dropLink("No heart rate data \u2014 check the strap");
+                return;
             }
             main.postDelayed(this, WATCHDOG_MS);
         }
@@ -119,7 +134,7 @@ public class HrManager {
         @Override
         public void run() {
             if (active && !connected) {
-                startScan();
+                connect();      // fresh adapter + scanner: they die when Bluetooth is toggled
             }
         }
     };
@@ -194,6 +209,8 @@ public class HrManager {
     public void stop() {
         active = false;
         main.removeCallbacks(rescan);
+        main.removeCallbacks(lostWatch);
+        linkLost = false;
         stopScan();
         closeGatt();
         alarm.reset();
@@ -209,11 +226,13 @@ public class HrManager {
     // ------------------------------------------------------------------ connect
 
     private void connect() {
+        stopScan();
         BluetoothManager manager =
                 (BluetoothManager) appContext.getSystemService(Context.BLUETOOTH_SERVICE);
         BluetoothAdapter adapter = manager == null ? null : manager.getAdapter();
         if (adapter == null || !adapter.isEnabled()) {
             announce("Bluetooth is off");
+            scheduleRescan(RESCAN_MS);
             return;
         }
         try {
@@ -224,9 +243,33 @@ public class HrManager {
         }
         if (scanner == null) {
             announce("Bluetooth LE unavailable");
+            scheduleRescan(RESCAN_MS);
             return;
         }
         startScan();
+    }
+
+    private void scheduleRescan(long delayMs) {
+        main.removeCallbacks(rescan);
+        main.postDelayed(rescan, delayMs);
+    }
+
+    /**
+     * The strap link is gone or dead. Drop it, alert until it is back, and look for the strap
+     * again. Covers both a reported disconnect and a link that went silent without one.
+     */
+    private void dropLink(String message) {
+        boolean wasConnected = connected;
+        closeGatt();
+        setConnected(false);
+        announce(message);
+        scheduleRescan(3000);
+        if (wasConnected) {
+            linkLost = true;
+            lastLostAlertAt = 0;
+            main.removeCallbacks(lostWatch);
+            main.post(lostWatch);
+        }
     }
 
     private void startScan() {
@@ -234,7 +277,8 @@ public class HrManager {
             return;
         }
         stopScan();
-        announce("Searching for a heart rate strap\u2026");
+        announce(linkLost ? "Signal lost \u2014 searching\u2026"
+                : "Searching for a heart rate strap\u2026");
 
         List<ScanFilter> filters = Collections.singletonList(
                 new ScanFilter.Builder().setServiceUuid(
@@ -259,8 +303,8 @@ public class HrManager {
         }
         try {
             scanner.stopScan(scanCallback);
-        } catch (SecurityException ignored) {
-            // permission revoked mid-run; nothing to do
+        } catch (SecurityException | IllegalStateException ignored) {
+            // permission revoked, or the adapter went away mid-run; nothing to do
         }
         scanning = false;
     }
@@ -326,6 +370,8 @@ public class HrManager {
                     }
                     if (status == BluetoothGatt.GATT_SUCCESS) {
                         lastSampleAt = System.currentTimeMillis();
+                        linkLost = false;
+                        main.removeCallbacks(lostWatch);
                         setConnected(true);
                         announce("Live");
                     } else {
@@ -382,13 +428,11 @@ public class HrManager {
                 }
                 return;
             }
-            closeGatt();
-            setConnected(false);
             if (active) {
-                announce("Signal lost, reconnecting\u2026");
-                main.removeCallbacks(rescan);
-                main.postDelayed(rescan, 3000);
+                dropLink("Signal lost \u2014 reconnecting\u2026");
             } else {
+                closeGatt();
+                setConnected(false);
                 announce("Not connected");
             }
         }

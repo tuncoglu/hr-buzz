@@ -13,6 +13,7 @@ Built because Polar Beat has no heart-rate alarm: the alert feature lives in Pol
 - **Hysteresis of 3 bpm:** if your limit is 155, you have to drop to 152 before it considers you "recovered". Stops the alarm chattering when you sit right on the line.
 - Runs as a foreground service, so the link survives the screen going off and the phone being in a pocket. The live BPM also shows in the notification.
 - Reconnects by itself if the strap drops out.
+- **Dropout warning:** if the link to the strap drops while you are running, it beeps and buzzes every 5 s ("Signal lost") until it reconnects or you press Stop.
 - **No-data warning:** if the strap stops sending readings for 10 s (fell off, out of range) it beeps and buzzes every 5 s with "No heart rate data".
 - **Stop** button on the notification disconnects and shuts the service down without opening the app.
 

@@ -43,6 +43,11 @@ public final class HrLogic {
         return now - lastSampleAt >= timeoutMs;
     }
 
+    /** True when at least {@code intervalMs} has passed since the last repeating alert. */
+    public static boolean alertDue(long lastAlertAt, long now, long intervalMs) {
+        return now - lastAlertAt >= intervalMs;
+    }
+
     /**
      * Decides when to sound the alarm.
      *
