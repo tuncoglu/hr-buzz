@@ -1,7 +1,10 @@
 package com.emre.hrbuzz;
 
 import android.app.Activity;
+import android.content.ActivityNotFoundException;
+import android.content.Intent;
 import android.content.SharedPreferences;
+import android.health.connect.HealthConnectManager;
 import android.os.Bundle;
 import android.text.InputFilter;
 import android.text.InputType;
@@ -15,6 +18,7 @@ import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Switch;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -40,6 +44,8 @@ public class SettingsActivity extends Activity {
     private LinearLayout restRow;
     private TextView strapText;
     private Button batteryButton;
+    private Switch moveSwitch;
+    private static final int REQ_HEALTH = 7;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -163,6 +169,20 @@ public class SettingsActivity extends Activity {
         voiceScroll.addView(voice);
         voiceCard.addView(voiceScroll);
 
+        // ---- move minutes
+        section(root, "Activity");
+        LinearLayout activity = card(root);
+        LinearLayout moveRow = row(activity, "Move minutes");
+        moveSwitch = new Switch(this);
+        moveSwitch.setChecked(Prefs.moveOn(this) && HealthSync.granted(this));
+        moveSwitch.setOnCheckedChangeListener((b, on) -> setMove(on));
+        moveRow.addView(moveSwitch);
+        hint(activity, "Reads steps and workouts from Health Connect (where Google Fit, "
+                + "Fitbit, Pixel Watch and most fitness apps save them) and counts the minutes "
+                + "you were moving. It shows on the home screen, and the coach is told the "
+                + "daily totals so it knows how active you are between sessions. Read-only; "
+                + "nothing is written back.");
+
         // ---- training screen
         section(root, "Training screen");
         LinearLayout screen = card(root);
@@ -213,6 +233,45 @@ public class SettingsActivity extends Activity {
         batteryButton.setText(MainActivity.batteryUnrestricted(this)
                 ? "Battery use: unrestricted \u2713" : "Allow unrestricted battery use");
         batteryButton.setEnabled(!MainActivity.batteryUnrestricted(this));
+    }
+
+    private void setMove(boolean on) {
+        if (!on) {
+            prefs.edit().putBoolean("moveOn", false).apply();
+            HealthSync.forget(this);
+            return;
+        }
+        if (!HealthSync.available(this)) {
+            moveSwitch.setChecked(false);
+            Toast.makeText(this, "Health Connect needs Android 14 or newer", Toast.LENGTH_LONG)
+                    .show();
+        } else if (HealthSync.granted(this)) {
+            prefs.edit().putBoolean("moveOn", true).apply();
+        } else {
+            requestPermissions(HealthSync.PERMISSIONS, REQ_HEALTH);
+        }
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions,
+                                           int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode != REQ_HEALTH) {
+            return;
+        }
+        if (HealthSync.granted(this)) {
+            prefs.edit().putBoolean("moveOn", true).apply();
+            return;
+        }
+        moveSwitch.setChecked(false);
+        // After two refusals Android stops asking: send them to Health Connect's own screen.
+        try {
+            startActivity(new Intent(HealthConnectManager.ACTION_MANAGE_HEALTH_PERMISSIONS)
+                    .putExtra(Intent.EXTRA_PACKAGE_NAME, getPackageName()));
+        } catch (ActivityNotFoundException e) {
+            Toast.makeText(this, "Allow steps and exercise for HR Buzz in Health Connect",
+                    Toast.LENGTH_LONG).show();
+        }
     }
 
     private void refreshProfile() {

@@ -46,6 +46,12 @@
             android:id="@+id/coachCard"
             style="@style/Card" />
 
+        <!-- move minutes from Health Connect, filled in code, hidden unless turned on -->
+        <LinearLayout
+            android:id="@+id/moveCard"
+            style="@style/Card"
+            android:visibility="gone" />
+
         <!-- strap + live heart rate -->
         <LinearLayout style="@style/Card">
 

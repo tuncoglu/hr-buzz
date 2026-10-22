@@ -55,6 +55,7 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
     private LinearLayout sessionsList;
     private TextView noSessions;
     private LinearLayout coachCard;
+    private LinearLayout moveCard;
     /** The next session to start follows the coach plan (survives the permission prompts). */
     private boolean coachedStart;
     private String coachError;
@@ -90,6 +91,7 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
         sessionsList = findViewById(R.id.sessions);
         noSessions = findViewById(R.id.noSessions);
         coachCard = findViewById(R.id.coachCard);
+        moveCard = findViewById(R.id.moveCard);
 
         maxInput.setText(String.valueOf(hr.getUserThreshold()));
         Ui.onNumber(maxInput, v -> hr.setThreshold(v));
@@ -238,6 +240,47 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
                 }
             });
         }, "import").start();
+    }
+
+    // ------------------------------------------------------------------ move minutes
+
+    /** Shows the last count at once, then reads Health Connect again and updates it. */
+    private void showMove() {
+        if (!Prefs.moveOn(this) || !HealthSync.granted(this)) {
+            moveCard.setVisibility(View.GONE);
+            return;
+        }
+        drawMove(HealthSync.cached(this));
+        Context app = getApplicationContext();
+        new Thread(() -> {
+            Move.Summary fresh = HealthSync.sync(app);
+            if (fresh != null) {
+                runOnUiThread(() -> {
+                    if (!isFinishing()) {
+                        drawMove(fresh);
+                    }
+                });
+            }
+        }, "move-sync").start();
+    }
+
+    private void drawMove(Move.Summary move) {
+        moveCard.removeAllViews();
+        moveCard.setVisibility(View.VISIBLE);
+        moveCard.addView(label("MOVE MINUTES"));
+        int[] week = move == null ? null : move.lastWeek(java.time.LocalDate.now());
+        if (week == null || week[0] < 0) {
+            moveCard.addView(gap(Ui.text(this, "Reading Health Connect\u2026", 15, Ui.TEXT2), 6));
+            return;
+        }
+        int total = Move.Summary.total(week);
+        moveCard.addView(gap(Ui.bold(Ui.text(this, week[0] + " min today", 24, Ui.TEXT)), 6));
+        moveCard.addView(gap(Ui.text(this, total + " min in the last 7 days (goal "
+                + Move.WEEKLY_GOAL + ")", 15, 0xFFC8C8CE), 4));
+        String level = Move.level(week);
+        if (!level.equals("unknown")) {
+            moveCard.addView(gap(Ui.text(this, "Lately: " + level, 13, Ui.TEXT2), 4));
+        }
     }
 
     // ------------------------------------------------------------------ coach
@@ -724,6 +767,7 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
         showSessions();
         Ui.show(batteryHint, !batteryUnrestricted(this));
         showCoach();
+        showMove();
         autoPlan();
         askProfile();
         Ui.select(sportsRow, java.util.Arrays.asList(Prefs.SPORTS).indexOf(Prefs.sport(this)));

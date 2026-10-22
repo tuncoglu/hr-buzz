@@ -159,6 +159,11 @@ final class Prefs {
         return new Training.Profile(hrMax(c), male(c), age(c), weight(c));
     }
 
+    /** Move minutes from Health Connect: shown on the home screen and told to the coach. */
+    static boolean moveOn(Context c) {
+        return of(c).getBoolean("moveOn", false);
+    }
+
     static String sport(Context c) {
         return of(c).getString("sport", SPORTS[0]);
     }

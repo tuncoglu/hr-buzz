@@ -305,7 +305,7 @@ public class Coach {
         long now = System.currentTimeMillis();
         ZoneId zone = ZoneId.systemDefault();
         Map<String, Object> brief = CoachLogic.brief(s, sessions, tests(), r, storedPlan(),
-                now, zone);
+                HealthSync.forCoach(appContext), now, zone);
         String body = DeepSeek.body(CoachLogic.SYSTEM, CoachLogic.planPrompt(brief, reason), 1500);
         Map<String, Object> answer = call(key, body);
         CoachLogic.Plan p = CoachLogic.parsePlan(answer, today());
@@ -362,7 +362,7 @@ public class Coach {
                 long now = System.currentTimeMillis();
                 ZoneId zone = ZoneId.systemDefault();
                 Map<String, Object> brief = CoachLogic.brief(s, sessions, tests(), r,
-                        todayPlan(), now, zone);
+                        todayPlan(), HealthSync.forCoach(appContext), now, zone);
                 List<String[]> history = chat();
                 if (!history.isEmpty()) {
                     history = history.subList(0, history.size() - 1);  // drop this message
@@ -428,7 +428,8 @@ public class Coach {
                     self = info(s);
                 }
                 Map<String, Object> brief = CoachLogic.brief(settings(), history, tests(),
-                        readiness(), null, System.currentTimeMillis(), ZoneId.systemDefault());
+                        readiness(), null, HealthSync.forCoach(appContext),
+                        System.currentTimeMillis(), ZoneId.systemDefault());
                 CoachLogic.Plan plan = s.planTitle.isEmpty() ? null : storedPlan();
                 String body = DeepSeek.body(CoachLogic.SYSTEM,
                         CoachLogic.debriefPrompt(brief, self, plan), 600);

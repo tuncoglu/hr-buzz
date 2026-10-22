@@ -154,6 +154,10 @@ public class CoachSetupActivity extends Activity {
         line(seen, "\u2713", 0xFF34C759, "Session totals: date, sport, time, distance, average "
                 + "and max heart rate, minutes in each zone, load, how it felt, your notes");
         line(seen, "\u2713", 0xFF34C759, "Resting heart rate and HRV from fitness tests");
+        if (Prefs.moveOn(this)) {
+            line(seen, "\u2713", 0xFF34C759, "Move minutes per day for the last week, from "
+                    + "Health Connect (minutes only, not the steps or workouts behind them)");
+        }
         line(seen, "\u2713", 0xFF34C759, "Age, sex, weight, max heart rate, your answers above");
         line(seen, "\u2715", 0xFFFF6961, "Never: GPS routes or location, second-by-second heart "
                 + "rate, beat-to-beat (RR) data, your name, contacts");

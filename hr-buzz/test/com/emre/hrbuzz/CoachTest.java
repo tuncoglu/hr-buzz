@@ -36,6 +36,7 @@ public final class CoachTest {
         readiness();
         redFlags();
         brief();
+        movement();
         client();
         if (failures > 0) {
             System.out.println(failures + " check(s) FAILED");
@@ -294,6 +295,25 @@ public final class CoachTest {
         old.notes = "chest felt tight on the hill";
         ok("recent symptom note", CoachLogic.recentRedFlag(java.util.Arrays.asList(recent), now));
         ok("old symptom note", !CoachLogic.recentRedFlag(java.util.Arrays.asList(old), now));
+    }
+
+    private static void movement() throws Exception {
+        java.time.LocalDate today = java.time.Instant.ofEpochMilli(NOW).atZone(LONDON).toLocalDate();
+        java.util.TreeMap<java.time.LocalDate, Integer> days = new java.util.TreeMap<>();
+        for (int i = 0; i < 7; i++) {
+            days.put(today.minusDays(i), i == 0 ? 12 : 10);
+        }
+        Move.Summary move = new Move.Summary(days, NOW);
+        Map<String, Object> b = Json.parseObject(Json.write(CoachLogic.brief(settings(),
+                new ArrayList<>(), new ArrayList<>(), new CoachLogic.Readiness(), null, move,
+                NOW, LONDON)));
+        Map<String, Object> m = Json.obj(b.get("movement"));
+        eq("movement level", "sedentary", m.get("level"));
+        eq("movement today", 12.0, m.get("todaySoFar"));
+        eq("movement week total", 72.0, m.get("last7DaysTotal"));
+        ok("no movement without Health Connect", !Json.parseObject(Json.write(CoachLogic.brief(
+                settings(), new ArrayList<>(), new ArrayList<>(), new CoachLogic.Readiness(),
+                null, NOW, LONDON))).containsKey("movement"));
     }
 
     private static void brief() throws Exception {

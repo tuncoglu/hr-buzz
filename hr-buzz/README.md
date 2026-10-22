@@ -1,6 +1,6 @@
 # HR Buzz
 
-A ~120 KB Android app for a Bluetooth heart-rate strap (Polar H10, H9, Verity Sense, Garmin, Wahoo…) that does what Polar Beat does: records sessions with GPS, heart rate zones, calories and voice guidance. It also does what Beat can't: beeps and buzzes when your heart rate goes over (or under) a limit you set. One app instead of two. No account, no cloud, no ads, no analytics. The only network use is the optional coach (below), which is off until you set it up.
+A ~120 KB Android app for a Bluetooth heart-rate strap (Polar H10, H9, Verity Sense, Garmin, Wahoo…) that does what Polar Beat does: records sessions with GPS, heart rate zones, calories and voice guidance. It also does what Beat can't: beeps and buzzes when your heart rate goes over (or under) a limit you set. One app instead of two. No account, no cloud, no ads, no analytics. The only network use is the optional coach (below), which is off until you set it up. Move minutes from Health Connect are optional too.
 
 | Home | Training | Summary | Route & splits |
 |---|---|---|---|
@@ -70,6 +70,15 @@ Privacy, as shown in Coach settings:
 
 Model: `deepseek-flash` via `https://api.deepseek.com/chat/completions`, with JSON output mode and thinking disabled for quick, structured replies. The model is called only at four moments: the morning plan, after Finish, Sunday, and when you ask. You need your own DeepSeek API key (platform.deepseek.com).
 
+## Move minutes (optional, Health Connect)
+
+Settings → Activity → **Move minutes** reads your steps and workouts from Health Connect, where Google Fit, Fitbit, Pixel Watch and most fitness apps save them, and counts the minutes you were moving. It shows on the home screen (today, and the last 7 days against the 150 min a week guideline) and the coach is told the daily totals, so it knows how sedentary or active you are between sessions.
+
+- **Not Google Fit.** The Fit APIs are being shut down and have no replacement for apps without a server; Health Connect is the on-device successor. Android 14 or newer (it is part of the system there, so no library is added).
+- **Our own count.** Fit's "Move Minutes" has no Health Connect equivalent, so a minute counts when it has at least 50 steps or falls inside a workout (HR Buzz's own sessions count too). Steps written by two devices for the same walk are not added together. It will be close to what Fit showed, not identical.
+- **Read-only, last 7 days.** Nothing is written to Health Connect. Health Connect only allows reading while the app is open, so the count is refreshed when you open HR Buzz and the morning plan uses the last one.
+- **Privacy.** On the phone, plus, if the coach is on, the seven daily minute totals sent to DeepSeek (never the steps, times or workouts). Turning it off forgets the count.
+
 ## Zones and calories
 
 Zones are Polar's default five: 50–60–70–80–90–100% of HRmax. HRmax is the value you enter in Settings, or Auto: 220 − age (Polar's default), raised to the highest heart rate you've held for 10 s in a session, once you agree. A new peak is never used without asking, because a strap glitch can read high. Zones are only as good as that number, so enter your real maximum if you know it. If you take beta-blockers or have a heart condition, use the limit your doctor gave you; the first-run screen asks for it.
@@ -137,6 +146,8 @@ Requires `ANDROID_HOME` (defaults to `/opt/android-sdk`) and a JDK (`JAVA_HOME`,
 |---|---|
 | `src/.../HrLogic.java` | Heart rate payload decode (HR, contact, RR) and the high/low alarm state machine. Pure Java, tested |
 | `src/.../Training.java` | Zones, Keytel calories, haversine, session stats, splits, TRIMP, effort label, RMSSD, formatting, CSV sample format. Pure Java, tested |
+| `src/.../Move.java` | Move minutes from step intervals and workouts, per local day, and the sedentary / active label. Pure Java, tested |
+| `src/.../HealthSync.java` | Reads steps and workouts from Health Connect (framework API) and caches the week |
 | `src/.../Export.java` | TCX and GPX writers. Pure Java, tested |
 | `src/.../HrManager.java` | BLE scan/connect/notify, strap pinning, battery, tone + vibration |
 | `src/.../Recorder.java` | Session recording: 1 Hz samples to disk, GPS distance filter, voice guidance |
@@ -155,7 +166,7 @@ Requires `ANDROID_HOME` (defaults to `/opt/android-sdk`) and a JDK (`JAVA_HOME`,
 | `src/.../Coach.java` | Coach on Android: settings, encrypted key, plan, conversation, morning job scheduling |
 | `src/.../CoachJob.java` | Morning plan job + notification |
 | `src/.../CoachActivity.java`, `CoachSetupActivity.java` | Coach screen (week, next days, conversation) and setup/privacy |
-| `test/...` | `HrLogicTest`, `TrainingTest`, `CoachTest` |
+| `test/...` | `HrLogicTest`, `TrainingTest`, `CoachTest`, `ImportTest`, `MoveTest` |
 
 ## Known limits
 
