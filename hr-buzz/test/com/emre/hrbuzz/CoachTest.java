@@ -350,6 +350,19 @@ public final class CoachTest {
         ok("pace beside km", r0.get("paceMinPerKm") != null);
         ok("no parts without walk breaks", r0.get("parts") == null);
 
+        String longNote = "Easy run today after three hard days. Zone 2 only, 45 minutes. "
+                + "The week builds from here with one hard run on Sunday and easy days between.";
+        eq("card lead: whole sentence", "Easy run today after three hard days.",
+                CoachLogic.shortMessage(longNote, 60));
+        eq("card lead: two sentences fit", "Easy run today after three hard days. Zone 2 only, "
+                + "45 minutes.", CoachLogic.shortMessage(longNote, 100));
+        eq("card lead: short message untouched", "Rest day.", CoachLogic.shortMessage("Rest day.", 60));
+        ok("card lead: one long sentence is cut at a word",
+                CoachLogic.shortMessage("a".repeat(5) + " " + "b".repeat(200), 50).endsWith("\u2026")
+                        && CoachLogic.shortMessage("a".repeat(5) + " " + "b".repeat(200), 50).length() <= 51);
+        eq("card lead: a decimal is not a sentence end", "Ran 4.33 km at an easy effort.",
+                CoachLogic.shortMessage("Ran 4.33 km at an easy effort. Then more words follow.", 40));
+
         // a history that starts this week: earlier weeks are "no data", not zeros
         List<CoachLogic.SessionInfo> fresh = new ArrayList<>();
         fresh.add(ss.get(0));

@@ -162,6 +162,18 @@ public class CoachActivity extends Activity {
         renderWeek();
 
         CoachLogic.Plan plan = coach.todayPlan();
+        if (plan != null) {
+            section(plan.rest ? "Today" : "Today's plan");
+            LinearLayout today = card();
+            today.addView(Ui.bold(Ui.text(this, plan.rest ? plan.title
+                    : plan.title + " \u00b7 " + plan.totalMinutes() + " min", 19, Ui.TEXT)));
+            if (!plan.message.isEmpty()) {
+                today.addView(gap(Ui.text(this, plan.message, 15, 0xFFC8C8CE), 6));
+            }
+            for (String a : plan.adjusted) {
+                today.addView(gap(Ui.text(this, "\u2022 " + a, 13, 0xFFFFC400), 4));
+            }
+        }
         if (plan != null && !plan.week.isEmpty()) {
             section("Next days");
             LinearLayout list = card();

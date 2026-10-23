@@ -386,7 +386,17 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
         String title = plan.rest ? plan.title : plan.title + ", " + plan.totalMinutes() + " min";
         coachCard.addView(gap(Ui.bold(Ui.text(this, title, 24, Ui.TEXT)), 6));
         if (!plan.message.isEmpty()) {
-            coachCard.addView(gap(Ui.text(this, plan.message, 15, 0xFFC8C8CE), 4));
+            // The lead only: the whole note is in the coach screen.
+            String lead = CoachLogic.shortMessage(plan.message, 180);
+            TextView note = Ui.text(this, lead, 15, 0xFFC8C8CE);
+            note.setOnClickListener(v -> startActivity(new Intent(this, CoachActivity.class)));
+            coachCard.addView(gap(note, 4));
+            if (!lead.equals(plan.message)) {
+                TextView more = Ui.text(this, "Read the full note", 13, 0xFF4F8EF7);
+                more.setPadding(0, Ui.dp(this, 6), 0, Ui.dp(this, 6));
+                more.setOnClickListener(v -> startActivity(new Intent(this, CoachActivity.class)));
+                coachCard.addView(more);
+            }
         }
         if (!plan.rest) {
             coachCard.addView(stepsBar(plan), buttonLp(12));
