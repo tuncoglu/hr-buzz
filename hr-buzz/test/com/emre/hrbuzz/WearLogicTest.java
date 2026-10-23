@@ -199,6 +199,20 @@ public class WearLogicTest {
         WearLogic.StepTally saved = new WearLogic.StepTally(tally.day(), tally.last(), tally.today());
         check(saved.update("2026-10-24", 80) == 180, "state survives being saved and loaded");
 
+        // the coach's message, cut to its first sentences
+        String coachMsg = "Today is an easy 35-minute run: your recent data is only a few minutes "
+                + "long, so easy aerobic time is the right place to start. Eight sessions this "
+                + "week add up to about five minutes of movement, so we begin from a clean base. "
+                + "Your zones come from the age formula (max 180). Tell me how it feels.";
+        check(WearLogic.firstSentences(coachMsg, 2).endsWith("clean base."), "two sentences");
+        check(!WearLogic.firstSentences(coachMsg, 2).contains("zones"), "the third is cut");
+        check(WearLogic.firstSentences("One only.", 2).equals("One only."), "shorter than n");
+        check(WearLogic.firstSentences("Run 5.5 km easy. Then walk. Then rest.", 1)
+                .equals("Run 5.5 km easy."), "a decimal is not a sentence end");
+        check(WearLogic.firstSentences("Go easy! Really? Yes. Done.", 3).equals("Go easy! Really? Yes."),
+                "! and ? end sentences");
+        check(WearLogic.firstSentences("  spaced out.  ", 2).equals("spaced out."), "trimmed");
+
         if (failures > 0) {
             System.out.println(failures + " failure(s)");
             System.exit(1);

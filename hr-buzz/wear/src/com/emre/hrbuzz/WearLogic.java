@@ -363,4 +363,21 @@ public final class WearLogic {
             return today;
         }
     }
+
+    /**
+     * The first {@code n} sentences of {@code text}, or all of it when it is shorter. A sentence
+     * ends at . ! or ? followed by a space and a capital letter, so "5.5 km" and "e.g. a walk"
+     * are not cut.
+     */
+    public static String firstSentences(String text, int n) {
+        String[] parts = text.trim().split("(?<=[.!?])\\s+(?=[A-Z\"'(])", n + 1);
+        if (parts.length <= n) {
+            return text.trim();
+        }
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < n; i++) {
+            sb.append(i > 0 ? " " : "").append(parts[i]);
+        }
+        return sb.toString();
+    }
 }

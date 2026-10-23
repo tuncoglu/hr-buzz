@@ -41,9 +41,13 @@ public class WearCoachActivity extends Activity {
     private boolean editing;
     private String error;
     private CoachLogic.Plan previous;
+    /** The coach's message is cut to two sentences until "More" is tapped. */
+    private boolean messageOpen;
 
     // setup form
     private EditText keyInput;
+    /** What was typed in the key field: the page rebuilds when the screen wakes, so keep it. */
+    private String keyDraft = "";
     private String goal;
     private int days;
     private int minutes;
@@ -76,8 +80,20 @@ public class WearCoachActivity extends Activity {
                 return;
             }
         }
-        build();
+        // Not while the settings form is open: a rebuild would wipe a key being typed, and the
+        // watch's keyboard and its dimming screen both stop and restart this page.
+        if (!editing || scroll.getChildCount() == 0) {
+            build();
+        }
         scroll.requestFocus();
+    }
+
+    @Override
+    protected void onStop() {
+        if (keyInput != null) {
+            keyDraft = keyInput.getText().toString();
+        }
+        super.onStop();
     }
 
     @Override
@@ -117,6 +133,9 @@ public class WearCoachActivity extends Activity {
     }
 
     private void build() {
+        if (keyInput != null && editing) {
+            keyDraft = keyInput.getText().toString();
+        }
         if (editing) {
             buildSetup();
         } else {
@@ -144,7 +163,7 @@ public class WearCoachActivity extends Activity {
         } else if (plan.rest) {
             p.addView(Wu.text(this, "Rest day", 24, Wu.TEXT, true));
             p.addView(Wu.space(this, 6));
-            p.addView(Wu.text(this, plan.message, 16, Wu.MUTED, false));
+            message(p, plan.message, 16);
             p.addView(Wu.space(this, 12));
             Button b = Wu.button(this, "I want to train", Wu.BUTTON, Wu.TEXT, 52);
             b.setOnClickListener(v -> refreshPlan("They want to train today after all; "
@@ -177,7 +196,7 @@ public class WearCoachActivity extends Activity {
         p.addView(Wu.text(this, plan.title, 22, Wu.TEXT, true));
         p.addView(Wu.text(this, plan.totalMinutes() + " min", 17, Wu.MUTED, true));
         p.addView(Wu.space(this, 8));
-        p.addView(Wu.text(this, plan.message, 15, Wu.MUTED, false));
+        message(p, plan.message, 15);
         p.addView(Wu.space(this, 12));
         p.addView(stepsBar(plan));
         for (CoachLogic.Step st : plan.steps) {
@@ -249,6 +268,24 @@ public class WearCoachActivity extends Activity {
         }
     }
 
+    /**
+     * The coach's message, cut to its first two sentences with a More button, so the plan
+     * itself is within reach of one scroll on a small screen.
+     */
+    private void message(LinearLayout p, String text, float size) {
+        String shown = messageOpen ? text : WearLogic.firstSentences(text, 2);
+        p.addView(Wu.text(this, shown, size, Wu.MUTED, false));
+        if (!messageOpen && shown.length() < text.length()) {
+            p.addView(Wu.space(this, 6));
+            Button more = Wu.button(this, "More", Wu.CARD, Wu.TEXT, 40);
+            more.setOnClickListener(v -> {
+                messageOpen = true;
+                build();
+            });
+            p.addView(more);
+        }
+    }
+
     /** The plan's steps as coloured bars sized by duration. */
     private View stepsBar(CoachLogic.Plan plan) {
         LinearLayout bar = new LinearLayout(this);
@@ -304,6 +341,7 @@ public class WearCoachActivity extends Activity {
         keyInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         keyInput.setLayoutParams(Wu.lp(ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
+        keyInput.setText(keyDraft);
         p.addView(keyInput);
         p.addView(Wu.space(this, 8));
 
@@ -387,6 +425,7 @@ public class WearCoachActivity extends Activity {
         if (!keyOk) {
             return;
         }
+        keyDraft = "";
         boolean changed = !goal.equals(prefs.getString("coachGoal", ""))
                 || days != prefs.getInt("coachDays", -1)
                 || minutes != prefs.getInt("coachMinutes", -1);
