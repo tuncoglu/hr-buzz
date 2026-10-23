@@ -349,6 +349,18 @@ public final class CoachTest {
         eq("km rounded", 5.14, r0.get("km"));
         ok("pace beside km", r0.get("paceMinPerKm") != null);
         ok("no parts without walk breaks", r0.get("parts") == null);
+
+        // a history that starts this week: earlier weeks are "no data", not zeros
+        List<CoachLogic.SessionInfo> fresh = new ArrayList<>();
+        fresh.add(ss.get(0));
+        Map<String, Object> fb = Json.parseObject(Json.write(CoachLogic.brief(settings(), fresh,
+                new ArrayList<>(), new CoachLogic.Readiness(), null, NOW, LONDON)));
+        List<Object> fw = Json.list(fb.get("last12Weeks"));
+        ok("this week is recorded", Json.obj(fw.get(0)).get("recorded") == null);
+        eq("earlier weeks are not recorded", Boolean.FALSE, Json.obj(fw.get(5)).get("recorded"));
+        ok("no fake zero sessions before the app", Json.obj(fw.get(5)).get("sessions") == null);
+        eq("old history still counts as recorded", 1, Json.obj(Json.list(
+                Json.obj(b).get("last12Weeks")).get(5)).get("recorded") == null ? 1 : 0);
         ok("weeks carry zone minutes", Json.obj(Json.list(b.get("last12Weeks")).get(0)).get("minutesInZones1to5") != null);
         eq("felt word", "good", r0.get("felt"));
         eq("zones minutes", Arrays.asList(0.0, 0.0, 20.0, 15.0, 0.0), r0.get("minutesInZones1to5"));

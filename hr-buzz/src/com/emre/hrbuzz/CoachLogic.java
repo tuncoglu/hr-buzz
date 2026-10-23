@@ -727,8 +727,19 @@ public final class CoachLogic {
             }
             recent.add(o);
         }
+        // Weeks before the first session this app holds are "no data", not "no training".
+        long firstAgo = -1;
+        for (SessionInfo si : sessions) {
+            long a = today.toEpochDay()
+                    - Instant.ofEpochMilli(si.start).atZone(zone).toLocalDate().toEpochDay();
+            firstAgo = Math.max(firstAgo, a);
+        }
         List<Object> weeks = new ArrayList<>();
         for (int w = 0; w < HISTORY_WEEKS; w++) {
+            if (firstAgo < 7L * w) {
+                weeks.add(Json.map("weeksAgo", w, "recorded", false));
+                continue;
+            }
             List<Object> wz = new ArrayList<>();
             for (int z = 1; z <= 5; z++) {
                 wz.add((int) Math.round(weekZone[w][z]));
@@ -949,7 +960,10 @@ public final class CoachLogic {
             + "left out of its minutes and zone figures (heart rate is only recorded while "
             + "moving): read the \"movingStretches\" and the bpm at the start and end of each "
             + "break as interval work with recovery, and do not call a run with walking breaks "
-            + "continuous. To judge whether they are improving, "
+            + "continuous. A week with \"recorded\":false is from before they "
+            + "started using this app: it means no data, not no training, so never say they had "
+            + "time off or were inactive because of it (use \"movement\" and what they tell "
+            + "you). To judge whether they are improving, "
             + "compare like with like over 3 to 4 weeks, never one or two sessions: pace at the "
             + "same average heart rate, heart rate drift across km splits, resting heart rate and "
             + "HRV from the fitness tests, and the share of weekly time in zones 1-2. Say plainly "
