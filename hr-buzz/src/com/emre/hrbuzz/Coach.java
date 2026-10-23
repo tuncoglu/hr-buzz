@@ -101,7 +101,7 @@ public class Coach {
         s.male = Prefs.male(appContext);
         s.weightKg = Prefs.weight(appContext);
         s.restHr = Prefs.restHr(appContext);
-        s.ceiling = HrManager.get(appContext).getUserThreshold();
+        s.ceiling = Prefs.alertAbove(appContext);
         s.hrMaxSource = Prefs.hrMaxSource(appContext);
         s.peakHr = Prefs.hrMaxSeen(appContext);
         // "date|hrMax": raised for a different hrMax does not count

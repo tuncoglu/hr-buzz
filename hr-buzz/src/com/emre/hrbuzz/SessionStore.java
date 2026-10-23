@@ -49,6 +49,9 @@ final class SessionStore {
         /** Highest heart rate held ~10 s; 0 when not yet computed (older sessions). */
         int peakHr;
         double kcal;
+        /** Steps taken and average steps a minute while moving; 0 when not counted (the phone does not). */
+        int steps;
+        int cadence;
         long[] zoneMs = new long[6];
         double trimp;
         double bestSpeed;
@@ -134,6 +137,9 @@ final class SessionStore {
                 z.put(v);
             }
             o.put("zoneMs", z);
+            if (steps > 0) {
+                o.put("steps", steps).put("cadence", cadence);
+            }
             JSONArray sp = new JSONArray();
             for (int[] split : splits) {
                 sp.put(new JSONArray().put(split[0]).put(split[1]));
@@ -186,6 +192,8 @@ final class SessionStore {
             s.kcal = o.optDouble("kcal", 0);
             s.trimp = o.optDouble("trimp", 0);
             s.bestSpeed = o.optDouble("bestSpeed", 0);
+            s.steps = o.optInt("steps");
+            s.cadence = o.optInt("cadence");
             s.hrMax = o.optInt("hrMax", 180);
             s.male = o.optBoolean("male", true);
             s.age = o.optInt("age", 40);

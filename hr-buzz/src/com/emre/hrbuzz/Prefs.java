@@ -104,6 +104,11 @@ final class Prefs {
         of(c).edit().putInt(use ? "hrMaxAccepted" : "hrMaxDeclined", peak).apply();
     }
 
+    /** The person's own "alert above" limit in bpm: 85% of HRmax until they set one. */
+    static int alertAbove(Context c) {
+        return of(c).getInt("threshold", Training.defaultAlert(hrMax(c)));
+    }
+
     /** HRmax used for zones. */
     static int hrMax(Context c) {
         if (hrMaxAuto(c)) {
