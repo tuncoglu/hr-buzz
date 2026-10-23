@@ -332,7 +332,7 @@ public final class CoachTest {
         a.notes = "windy";
         ss.add(a);
         CoachLogic.SessionInfo old = new CoachLogic.SessionInfo();
-        old.start = NOW - 70 * DAY;
+        old.start = NOW - 100 * DAY;
         old.sport = "Walking";
         old.trimp = 30;
         ss.add(old);
@@ -343,12 +343,14 @@ public final class CoachTest {
         eq("brief date", "2026-10-21", Json.obj(b.get("today")).get("date"));
         eq("brief weekday", "Wednesday", Json.obj(b.get("today")).get("weekday"));
         List<Object> recent = Json.list(b.get("recentSessions"));
-        eq("older than 8 weeks dropped", 1, recent.size());
+        eq("older than 12 weeks dropped", 1, recent.size());
+        Map<String, Object> lim = Json.obj(b.get("limits"));
+        ok("limits in brief", lim.get("maxSessionMinutes") != null && lim.get("loadLeft") != null);
         Map<String, Object> r0 = Json.obj(recent.get(0));
         eq("km rounded", 5.14, r0.get("km"));
         eq("felt word", "good", r0.get("felt"));
         eq("zones minutes", Arrays.asList(0.0, 0.0, 20.0, 15.0, 0.0), r0.get("minutesInZones1to5"));
-        eq("week 0 load", 120.0, Json.obj(Json.list(b.get("last8Weeks")).get(0)).get("load"));
+        eq("week 0 load", 120.0, Json.obj(Json.list(b.get("last12Weeks")).get(0)).get("load"));
         ok("no location in brief", !json.contains("lat") && !json.contains("lon"));
         ok("zone table present", json.contains("\"bpm\":\"108-125\""));
 
@@ -391,7 +393,8 @@ public final class CoachTest {
             Map<String, Object> sent = Json.parseObject(lastBody.get());
             eq("model", "deepseek-flash", sent.get("model"));
             eq("json mode", "json_object", Json.obj(sent.get("response_format")).get("type"));
-            eq("thinking off", "disabled", Json.obj(sent.get("thinking")).get("type"));
+            eq("thinking on", "enabled", Json.obj(sent.get("thinking")).get("type"));
+            eq("effort high", "high", sent.get("reasoning_effort"));
             ok("key not in body", !lastBody.get().contains("sk-test"));
 
             Map<String, Object> f = new DeepSeek(base + "/flaky", 5000).ask("k", body);

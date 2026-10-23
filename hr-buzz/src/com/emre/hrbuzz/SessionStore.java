@@ -53,6 +53,12 @@ final class SessionStore {
         double trimp;
         double bestSpeed;
         List<int[]> splits = new ArrayList<>();
+        /** Moving stretches between breaks: {ms, average bpm, max bpm}. */
+        List<long[]> segments = new ArrayList<>();
+        /** Breaks: {gap ms, bpm before, bpm after}. */
+        List<long[]> pauses = new ArrayList<>();
+        /** False for sessions saved before breaks were kept: filled in from their samples. */
+        boolean pausesKnown;
         // profile at the time, so a rebuild gives the same numbers after a settings change
         int hrMax;
         boolean male;
@@ -85,6 +91,9 @@ final class SessionStore {
             trimp = s.trimp();
             bestSpeed = s.bestSpeed;
             splits = new ArrayList<>(s.splits);
+            segments = s.segments();
+            pauses = new ArrayList<>(s.pauses);
+            pausesKnown = true;
         }
 
         double avgSpeed() {
@@ -112,7 +121,34 @@ final class SessionStore {
                 sp.put(new JSONArray().put(split[0]).put(split[1]));
             }
             o.put("splits", sp);
+            o.put("segments", longRows(segments));
+            o.put("pauses", longRows(pauses));
             return o;
+        }
+
+        private static JSONArray longRows(List<long[]> rows) throws JSONException {
+            JSONArray a = new JSONArray();
+            for (long[] r : rows) {
+                JSONArray row = new JSONArray();
+                for (long v : r) {
+                    row.put(v);
+                }
+                a.put(row);
+            }
+            return a;
+        }
+
+        private static List<long[]> readRows(JSONArray a) throws JSONException {
+            List<long[]> out = new ArrayList<>();
+            for (int i = 0; a != null && i < a.length(); i++) {
+                JSONArray row = a.getJSONArray(i);
+                long[] r = new long[row.length()];
+                for (int k = 0; k < r.length; k++) {
+                    r[k] = row.getLong(k);
+                }
+                out.add(r);
+            }
+            return out;
         }
 
         static Summary fromJson(JSONObject o) throws JSONException {
@@ -140,6 +176,9 @@ final class SessionStore {
             s.targetPct = o.optInt("targetPct", -1);
             s.coachNote = o.optString("coachNote", "");
             s.imported = o.optBoolean("imported");
+            s.pausesKnown = o.has("pauses");
+            s.segments = readRows(o.optJSONArray("segments"));
+            s.pauses = readRows(o.optJSONArray("pauses"));
             JSONArray z = o.optJSONArray("zoneMs");
             for (int i = 0; z != null && i < Math.min(6, z.length()); i++) {
                 s.zoneMs[i] = z.getLong(i);
@@ -236,6 +275,22 @@ final class SessionStore {
             Log.w(TAG, "read samples failed", e);
         }
         return out;
+    }
+
+    /**
+     * Sessions saved before breaks were kept get their segments, breaks and best speed from
+     * their samples, once. Reads a file: call off the main thread.
+     */
+    static void backfill(Context c, Summary s) {
+        if (s.pausesKnown || s.recording) {
+            return;
+        }
+        Training.Stats st = replay(s, samples(c, s.id));
+        s.segments = st.segments();
+        s.pauses = new ArrayList<>(st.pauses);
+        s.bestSpeed = st.bestSpeed;
+        s.pausesKnown = true;
+        save(c, s);
     }
 
     /** Replays the samples through {@link Training.Stats}, exactly as during the recording. */

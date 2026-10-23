@@ -112,6 +112,8 @@ public final class HrLogic {
         private final int hysteresis;
         private final long reAlertMs;
         private final int confirm;
+        private int lowConfirm;
+        private long lowReAlertMs;
 
         private boolean above;
         private boolean below;
@@ -130,6 +132,17 @@ public final class HrLogic {
             this.hysteresis = hysteresis;
             this.reAlertMs = reAlertMs;
             this.confirm = Math.max(1, confirm);
+            this.lowConfirm = this.confirm;
+            this.lowReAlertMs = reAlertMs;
+        }
+
+        /**
+         * The lower limit is a nudge, not a warning: it can wait longer before it sounds and
+         * repeat less often than the high alarm, so a few seconds of dip does not nag.
+         */
+        public void setLowTiming(int confirm, long reAlertMs) {
+            lowConfirm = Math.max(1, confirm);
+            lowReAlertMs = reAlertMs;
         }
 
         /** Changes the limit without losing the latched state. */
@@ -184,7 +197,7 @@ public final class HrLogic {
                     above = false;
                     return BACK;
                 }
-                return repeat(now, OVER);
+                return repeat(now, OVER, reAlertMs);
             }
             if (below) {
                 if (bpm > threshold) {
@@ -193,7 +206,7 @@ public final class HrLogic {
                     below = false;
                     return BACK;
                 } else {
-                    return repeat(now, UNDER);
+                    return repeat(now, UNDER, lowReAlertMs);
                 }
             }
             if (bpm > threshold) {
@@ -211,7 +224,7 @@ public final class HrLogic {
                 if (!lowArmed) {
                     lowArmed = bpm >= low;
                 } else if (bpm < low) {
-                    if (++underCount < confirm) {
+                    if (++underCount < lowConfirm) {
                         return NONE;
                     }
                     underCount = 0;
@@ -225,8 +238,8 @@ public final class HrLogic {
             return NONE;
         }
 
-        private int repeat(long now, int event) {
-            if (now - lastAlertAt >= reAlertMs) {
+        private int repeat(long now, int event, long everyMs) {
+            if (now - lastAlertAt >= everyMs) {
                 lastAlertAt = now;
                 return event;
             }

@@ -42,7 +42,13 @@ public class Coach {
     private static final String TAG = "HRBuzz";
     private static final String KEY_ALIAS = "hrbuzz_coach_api_key";
     static final int JOB_MORNING = 7;
-    private static final int MAX_CHAT = 30;
+    private static final int MAX_CHAT = 60;
+    /** Chat turns sent with each question. */
+    private static final int CHAT_TURNS = 30;
+    /** max_tokens covers the model's reasoning as well as its answer. */
+    private static final int PLAN_TOKENS = 12000;
+    private static final int ASK_TOKENS = 8000;
+    private static final int DEBRIEF_TOKENS = 8000;
 
     public interface Callback<T> {
         /** Exactly one of {@code result} and {@code error} is non-null. On the main thread. */
@@ -306,7 +312,7 @@ public class Coach {
         ZoneId zone = ZoneId.systemDefault();
         Map<String, Object> brief = CoachLogic.brief(s, sessions, tests(), r, storedPlan(),
                 HealthSync.forCoach(appContext), now, zone);
-        String body = DeepSeek.body(CoachLogic.SYSTEM, CoachLogic.planPrompt(brief, reason), 1500);
+        String body = DeepSeek.body(CoachLogic.SYSTEM, CoachLogic.planPrompt(brief, reason), PLAN_TOKENS);
         Map<String, Object> answer = call(key, body);
         CoachLogic.Plan p = CoachLogic.parsePlan(answer, today());
         if (p == null) {
@@ -369,7 +375,7 @@ public class Coach {
                 }
                 String body = DeepSeek.body(CoachLogic.SYSTEM,
                         CoachLogic.askPrompt(brief, history.subList(
-                                Math.max(0, history.size() - 10), history.size()), text), 1500);
+                                Math.max(0, history.size() - CHAT_TURNS), history.size()), text), ASK_TOKENS);
                 a = CoachLogic.parseAsk(call(key, body), today());
                 if (a.plan != null) {
                     double[] loads = CoachLogic.recentLoads(sessions, now, zone);
@@ -425,6 +431,7 @@ public class Coach {
                     }
                 }
                 if (self == null) {
+                    SessionStore.backfill(appContext, s);
                     self = info(s);
                 }
                 Map<String, Object> brief = CoachLogic.brief(settings(), history, tests(),
@@ -432,7 +439,7 @@ public class Coach {
                         System.currentTimeMillis(), ZoneId.systemDefault());
                 CoachLogic.Plan plan = s.planTitle.isEmpty() ? null : storedPlan();
                 String body = DeepSeek.body(CoachLogic.SYSTEM,
-                        CoachLogic.debriefPrompt(brief, self, plan), 600);
+                        CoachLogic.debriefPrompt(brief, self, plan), DEBRIEF_TOKENS);
                 Map<String, Object> answer = call(key, body);
                 d = CoachLogic.parseDebrief(answer);
                 SessionStore.Summary fresh = SessionStore.load(appContext, s.id);
@@ -503,6 +510,7 @@ public class Coach {
         List<CoachLogic.SessionInfo> out = new ArrayList<>();
         for (SessionStore.Summary s : SessionStore.list(appContext)) {
             if (!s.recording) {
+                SessionStore.backfill(appContext, s);
                 out.add(info(s));
             }
         }
@@ -523,6 +531,9 @@ public class Coach {
         si.notes = s.notes;
         si.planTitle = s.planTitle;
         si.targetPct = s.targetPct;
+        si.segments = s.segments;
+        si.pauses = s.pauses;
+        si.splits = s.splits;
         return si;
     }
 

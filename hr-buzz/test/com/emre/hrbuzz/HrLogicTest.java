@@ -16,6 +16,7 @@ public final class HrLogicTest {
         measurement();
         lowLimit();
         confirm();
+        lowTiming();
         if (failures > 0) {
             System.out.println(failures + " check(s) FAILED");
             System.exit(1);
@@ -151,6 +152,24 @@ public final class HrLogicTest {
         a.reset();
         a.setLow(0);
         eq("after reset, a fresh count", HrLogic.Alarm.NONE, a.evaluate(170, t += 1000));
+    }
+
+    private static void lowTiming() {
+        HrLogic.Alarm a = new HrLogic.Alarm(155, 3, 5000, 3);
+        a.setLowTiming(10, 30000);
+        a.setLow(100);
+        long t = 0;
+        eq("arm low", HrLogic.Alarm.NONE, a.evaluate(110, t));
+        for (int i = 1; i <= 9; i++) {
+            eq("dip " + i + " of 10: quiet", HrLogic.Alarm.NONE, a.evaluate(98, t += 1000));
+        }
+        eq("dip 10: nudge", HrLogic.Alarm.UNDER, a.evaluate(98, t += 1000));
+        eq("no repeat after 5 s", HrLogic.Alarm.NONE, a.evaluate(98, t += 5000));
+        eq("repeat after 30 s", HrLogic.Alarm.UNDER, a.evaluate(98, t += 25000));
+        eq("high alarm keeps its own pace", HrLogic.Alarm.NONE, a.evaluate(160, t += 1000));
+        eq("high 2", HrLogic.Alarm.NONE, a.evaluate(160, t += 1000));
+        eq("high 3: alarm", HrLogic.Alarm.OVER, a.evaluate(160, t += 1000));
+        eq("high repeats after 5 s", HrLogic.Alarm.OVER, a.evaluate(160, t += 5000));
     }
 
     private static void eq(String what, int expected, int actual) {

@@ -13,7 +13,8 @@ import java.util.Map;
 
 /**
  * DeepSeek chat completions over plain HTTPS (OpenAI-compatible API), JSON output mode,
- * thinking off: the coach wants a quick, structured answer, not a long deliberation.
+ * thinking on at high effort: the coach should reason over the person's history, not answer
+ * off the cuff. Reasoning tokens count against max_tokens, so callers leave generous room.
  * java.net only, so it runs (and is tested against a local stub) on a plain JVM.
  */
 public final class DeepSeek {
@@ -35,7 +36,7 @@ public final class DeepSeek {
     private final int readTimeoutMs;
 
     public DeepSeek() {
-        this(ENDPOINT, 60000);
+        this(ENDPOINT, 240000);
     }
 
     public DeepSeek(String endpoint, int readTimeoutMs) {
@@ -52,9 +53,9 @@ public final class DeepSeek {
                 "model", MODEL,
                 "messages", messages,
                 "response_format", Json.map("type", "json_object"),
-                "thinking", Json.map("type", "disabled"),
+                "thinking", Json.map("type", "enabled"),
+                "reasoning_effort", "high",
                 "max_tokens", maxTokens,
-                "temperature", 0.7,
                 "stream", false));
     }
 

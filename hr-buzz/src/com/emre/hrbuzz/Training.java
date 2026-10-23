@@ -374,6 +374,8 @@ public final class Training {
 
         private static final long SPEED_WINDOW_MS = 20000;
         private static final int WINDOW = 64;
+        private static final long CATCH_UP_GAP_MS = 3000;
+        private static final double CATCH_UP_M = 10;
 
         private final Profile profile;
 
@@ -384,6 +386,8 @@ public final class Training {
         public final long[] zoneMs = new long[6];
         /** Fastest 20 s rolling speed seen, m/s. */
         public double bestSpeed;
+        /** Breaks (pauses) in order: {gap ms, bpm just before, bpm just after}. */
+        public final List<long[]> pauses = new ArrayList<>();
         /** Per completed km: {seconds, average bpm}. */
         public final List<int[]> splits = new ArrayList<>();
         /** Highest average over 10 consecutive heart rate samples (~10 s): a real peak, not a spike. */
@@ -399,6 +403,17 @@ public final class Training {
         private double hrWeighted;
         private long lastT = -1;
         private double lastDist;
+        /** When the distance last grew, -1 at the start of a segment. */
+        private long lastMoveT = -1;
+
+        private final List<long[]> closedSegments = new ArrayList<>();
+        private long segMs;
+        private long segHrMs;
+        private double segHrWeighted;
+        private int segMax;
+        private int lastBpm;
+        private long pauseT = -1;
+        private int pauseBpm;
 
         private final long[] winT = new long[WINDOW];
         private final double[] winD = new double[WINDOW];
@@ -415,13 +430,44 @@ public final class Training {
 
         /** Forget the previous sample so the next one starts a new segment (after a pause). */
         public void pause() {
+            if (lastT >= 0) {
+                closeSegment();
+                pauseT = lastT;
+                pauseBpm = lastBpm;
+            }
             lastT = -1;
             winCount = 0;
+            lastMoveT = -1;
             peakCount = 0;
             peakSum = 0;
         }
 
+        private void closeSegment() {
+            if (segMs > 0) {
+                closedSegments.add(new long[]{segMs,
+                        segHrMs > 0 ? Math.round(segHrWeighted / segHrMs) : 0, segMax});
+            }
+            segMs = 0;
+            segHrMs = 0;
+            segHrWeighted = 0;
+            segMax = 0;
+        }
+
+        /** The moving stretches between breaks: {ms, average bpm, max bpm}, the open one last. */
+        public List<long[]> segments() {
+            List<long[]> out = new ArrayList<>(closedSegments);
+            if (segMs > 0) {
+                out.add(new long[]{segMs,
+                        segHrMs > 0 ? Math.round(segHrWeighted / segHrMs) : 0, segMax});
+            }
+            return out;
+        }
+
         public void add(Sample s) {
+            if (pauseT >= 0) {
+                pauses.add(new long[]{Math.max(0, s.t - pauseT), pauseBpm, Math.max(0, s.bpm)});
+                pauseT = -1;
+            }
             // Time is the gap since the previous sample, so a segment's first sample adds none.
             long dt = lastT < 0 ? 0 : Math.max(0, Math.min(MAX_TICK_MS, s.t - lastT));
             double dd = Math.max(0, s.dist - lastDist);
@@ -431,6 +477,14 @@ public final class Training {
             activeMs += dt;
             double before = distanceM;
             distanceM += dd;
+            if (dd > 0) {
+                // A lost GPS fix freezes the distance, then the whole gap arrives in one step:
+                // real distance, but no speed. Start the speed window again after it.
+                if (lastMoveT >= 0 && s.t - lastMoveT > CATCH_UP_GAP_MS && dd > CATCH_UP_M) {
+                    winCount = 0;
+                }
+                lastMoveT = s.t;
+            }
 
             if (s.bpm > 0 && s.bpm <= 225) {
                 if (peakCount == PEAK_WINDOW) {
@@ -447,6 +501,13 @@ public final class Training {
             } else {
                 peakCount = 0;
                 peakSum = 0;
+            }
+            segMs += dt;
+            if (s.bpm > 0) {
+                lastBpm = s.bpm;
+                segHrMs += dt;
+                segHrWeighted += (double) s.bpm * dt;
+                segMax = Math.max(segMax, s.bpm);
             }
             if (s.bpm > 0) {
                 hrMs += dt;

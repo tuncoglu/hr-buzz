@@ -117,8 +117,24 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
 
         connectButton.setOnClickListener(v -> toggle());
         startButton.setOnClickListener(v -> {
-            coachedStart = false;
-            startSession();
+            CoachLogic.Plan waiting = pendingPlan();
+            if (waiting == null) {
+                coachedStart = false;
+                startSession();
+                return;
+            }
+            // A plan is waiting and this tap would skip it: say so, and let them choose.
+            new android.app.AlertDialog.Builder(this)
+                    .setTitle("Follow today's plan?")
+                    .setMessage(waiting.title + ", " + waiting.totalMinutes() + " min. The coach "
+                            + "sets your alerts and speaks each step; a free session has neither.")
+                    .setPositiveButton("Follow the plan", (d, w) -> startPlan())
+                    .setNegativeButton("Free session", (d, w) -> {
+                        coachedStart = false;
+                        startSession();
+                    })
+                    .setNeutralButton("Cancel", null)
+                    .show();
         });
         findViewById(R.id.settings).setOnClickListener(
                 v -> startActivity(new Intent(this, SettingsActivity.class)));
@@ -285,6 +301,14 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
 
     // ------------------------------------------------------------------ coach
 
+    /** Today's plan when it is there to follow: a training day, not done, nothing recording. */
+    private CoachLogic.Plan pendingPlan() {
+        Coach coach = Coach.get(this);
+        CoachLogic.Plan plan = coach.isEnabled() && !recorder.isRecording()
+                && !coach.todayDone() ? coach.todayPlan() : null;
+        return plan != null && !plan.rest ? plan : null;
+    }
+
     private void startPlan() {
         if (Coach.get(this).todayPlan() == null) {
             Toast.makeText(this, "No plan for today yet", Toast.LENGTH_SHORT).show();
@@ -296,6 +320,7 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
 
     private void showCoach() {
         coachCard.removeAllViews();
+        showRecorder();             // its label depends on whether a plan is waiting
         Coach coach = Coach.get(this);
         if (!coach.isEnabled()) {
             coachCard.addView(label("COACH"));
@@ -310,7 +335,11 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
 
         LinearLayout head = new LinearLayout(this);
         head.setGravity(Gravity.CENTER_VERTICAL);
-        head.addView(label("COACH \u00b7 TODAY"), new LinearLayout.LayoutParams(0,
+        TextView headLabel = label(pendingPlan() != null ? "TODAY'S PLAN" : "COACH \u00b7 TODAY");
+        if (pendingPlan() != null) {
+            headLabel.setTextColor(0xFF34C759);
+        }
+        head.addView(headLabel, new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1));
         TextView open = Ui.text(this, "Open coach", 14, Ui.TEXT);
         open.setPadding(Ui.dp(this, 12), Ui.dp(this, 10), 0, Ui.dp(this, 10));
@@ -364,6 +393,11 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
             int[] lim = mainLimits(plan);
             coachCard.addView(gap(Ui.text(this, "Alerts set for you: beep above " + lim[0]
                     + (lim[1] > 0 ? ", below " + lim[1] : ""), 13, 0xFFC8C8CE), 8));
+            if (pendingPlan() != null) {
+                coachCard.addView(gap(Ui.text(this, "Not started yet. Tap the button below to "
+                        + "follow it: alerts and spoken steps only run in a planned session.",
+                        13, 0xFF34C759), 6));
+            }
         }
         for (String a : plan.adjusted) {
             coachCard.addView(gap(Ui.text(this, "\u2022 " + a, 13, 0xFFFFC400), 4));
@@ -877,7 +911,7 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
         if (recorder.isRecording()) {
             startButton.setText(recorder.getSession().sport + " in progress \u2014 open");
         } else {
-            startButton.setText("Start");
+            startButton.setText(pendingPlan() != null ? "Start a free session" : "Start");
         }
     }
 

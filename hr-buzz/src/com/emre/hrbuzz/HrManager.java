@@ -62,6 +62,9 @@ public class HrManager {
     private static final long RE_ALERT_MS = 5000;
     /** Readings in a row past a limit before it sounds: one artifact spike is not enough. */
     private static final int CONFIRM = 3;
+    /** The lower limit waits for 10 readings and repeats every 30 s: a nudge, not an alarm. */
+    private static final int LOW_CONFIRM = 10;
+    private static final long LOW_RE_ALERT_MS = 30000;
     /** Outside a session a lost link only warns this long, then waits quietly. */
     private static final long LOST_ALERT_MS = 30000;
     /** If nothing is found, start scanning again after this long. */
@@ -193,6 +196,7 @@ public class HrManager {
         this.prefs = context.getSharedPreferences("hrbuzz", Context.MODE_PRIVATE);
         this.threshold = prefs.getInt("threshold", Training.defaultAlert(Prefs.hrMax(context)));
         this.alarm = new HrLogic.Alarm(threshold, HYSTERESIS, RE_ALERT_MS, CONFIRM);
+        this.alarm.setLowTiming(LOW_CONFIRM, LOW_RE_ALERT_MS);
         this.alarmOn = prefs.getBoolean("alarmOn", true);
         this.deviceName = prefs.getString("deviceName", null);
     }

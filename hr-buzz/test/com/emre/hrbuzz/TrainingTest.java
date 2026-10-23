@@ -95,6 +95,37 @@ public final class TrainingTest {
         noHr.add(sample(1000, -1, 0));
         eq("no hr: avg 0", 0, noHr.avgHr());
         near("no hr: kcal 0", 0, noHr.kcal, 0);
+
+        // a lost GPS fix: distance freezes 17 s, then the gap arrives in one 40 m step. The
+        // distance counts, but the catch-up must not read as a fast 20 s stretch.
+        Training.Stats walk = new Training.Stats(new Training.Profile(190, true, 40, 80));
+        double d = 0;
+        for (int i = 0; i <= 120; i++) {
+            if (i < 60 || i > 77) {
+                d += i == 78 ? 40 : 1.4;
+            }
+            walk.add(sample(1000L * i, 110, d));
+        }
+        near("catch-up distance counts", 1.4 * 60 + 40 + 1.4 * 42 - 1.4, walk.distanceM, 1.5);
+        near("catch-up is not a sprint", 1.4, walk.bestSpeed, 0.1);
+
+        // walking breaks: two moving stretches with one break between them
+        Training.Stats br = new Training.Stats(new Training.Profile(190, true, 40, 80));
+        for (int i = 0; i <= 60; i++) {
+            br.add(sample(1000L * i, 150, 3.0 * i));
+        }
+        br.pause();
+        for (int i = 0; i <= 30; i++) {
+            br.add(sample(1000L * (300 + i), i == 0 ? 118 : 140, 180 + 1.4 * i));
+        }
+        List<long[]> seg = br.segments();
+        eq("two stretches", 2, seg.size());
+        eq("first stretch ms", 60000, (int) seg.get(0)[0]);
+        eq("first stretch avg bpm", 150, (int) seg.get(0)[1]);
+        eq("one break", 1, br.pauses.size());
+        eq("break gap ms", 240000, (int) br.pauses.get(0)[0]);
+        eq("bpm as the break started", 150, (int) br.pauses.get(0)[1]);
+        eq("bpm as it ended", 118, (int) br.pauses.get(0)[2]);
     }
 
     private static void splitsAndPause() {
