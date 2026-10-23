@@ -102,7 +102,143 @@ public class Coach {
         s.weightKg = Prefs.weight(appContext);
         s.restHr = Prefs.restHr(appContext);
         s.ceiling = HrManager.get(appContext).getUserThreshold();
+        s.hrMaxSource = Prefs.hrMaxSource(appContext);
+        s.peakHr = Prefs.hrMaxSeen(appContext);
+        // "date|hrMax": raised for a different hrMax does not count
+        String[] raised = prefs.getString("coachHrMaxRaised", "").split("\\|");
+        s.hrMaxRaised = raised.length == 2 && raised[1].equals(String.valueOf(s.hrMax))
+                ? raised[0] : "";
+        s.goalTarget = prefs.getString("coachGoalTarget", "");
+        s.goalBy = prefs.getString("coachGoalBy", "");
+        s.remember = remembered();
         return s;
+    }
+
+    // ------------------------------------------------------- what it remembers
+
+    /** Things the person asked the coach to keep in mind, oldest first. */
+    public List<String> remembered() {
+        List<String> out = new ArrayList<>();
+        try {
+            JSONArray a = new JSONArray(prefs.getString("coachRemember", "[]"));
+            for (int i = 0; i < a.length(); i++) {
+                out.add(a.getString(i));
+            }
+        } catch (JSONException ignored) {
+        }
+        return out;
+    }
+
+    private void saveRemembered(List<String> all) {
+        JSONArray a = new JSONArray();
+        for (String t : all.subList(Math.max(0, all.size() - CoachLogic.MAX_REMEMBER), all.size())) {
+            a.put(t);
+        }
+        prefs.edit().putString("coachRemember", a.toString()).apply();
+    }
+
+    private synchronized void remember(List<String> items) {
+        List<String> all = remembered();
+        for (String t : items) {
+            if (!CoachLogic.redFlag(t) && !all.contains(t)) {
+                all.add(t);
+            }
+        }
+        saveRemembered(all);
+    }
+
+    public synchronized void forgetItem(String item) {
+        List<String> all = remembered();
+        all.remove(item);
+        saveRemembered(all);
+    }
+
+    // --------------------------------------------------------------- check-in
+
+    /** How they slept and how their digestion was today: 0 = not answered. */
+    public int[] checkIn() {
+        JSONObject day = checkIns().optJSONObject(today());
+        return day == null ? new int[]{0, 0} : new int[]{day.optInt("sleep"), day.optInt("gut")};
+    }
+
+    /** Saves part of today's check-in; -1 leaves that answer as it is. */
+    public synchronized void setCheckIn(int sleep, int gut) {
+        JSONObject all = checkIns();
+        try {
+            JSONObject day = all.optJSONObject(today());
+            if (day == null) {
+                day = new JSONObject();
+            }
+            if (sleep >= 0) {
+                day.put("sleep", sleep);
+            }
+            if (gut >= 0) {
+                day.put("gut", gut);
+            }
+            all.put(today(), day);
+            prefs.edit().putString("coachCheckIns", pruned(all).toString()).apply();
+        } catch (JSONException ignored) {
+        }
+    }
+
+    private JSONObject checkIns() {
+        try {
+            return new JSONObject(prefs.getString("coachCheckIns", "{}"));
+        } catch (JSONException e) {
+            return new JSONObject();
+        }
+    }
+
+    /** Only the days the coach is told about are kept. */
+    private JSONObject pruned(JSONObject byDate) {
+        String oldest = java.time.LocalDate.parse(today())
+                .minusDays(CoachLogic.DAYS_BACK - 1).toString();
+        JSONObject out = new JSONObject();
+        for (java.util.Iterator<String> it = byDate.keys(); it.hasNext(); ) {
+            String d = it.next();
+            if (d.compareTo(oldest) >= 0) {
+                try {
+                    out.put(d, byDate.get(d));
+                } catch (JSONException ignored) {
+                }
+            }
+        }
+        return out;
+    }
+
+    /** Health Connect, check-ins and the plan's history, as the brief takes them. */
+    private CoachLogic.Extras extras() {
+        CoachLogic.Extras x = new CoachLogic.Extras();
+        x.move = HealthSync.forCoach(appContext);
+        x.health = HealthSync.daysForCoach(appContext);
+        JSONObject ci = checkIns();
+        for (java.util.Iterator<String> it = ci.keys(); it.hasNext(); ) {
+            String d = it.next();
+            JSONObject o = ci.optJSONObject(d);
+            if (o != null) {
+                CoachLogic.CheckIn c = new CoachLogic.CheckIn();
+                c.date = d;
+                c.sleep = o.optInt("sleep");
+                c.gut = o.optInt("gut");
+                x.checkIns.add(c);
+            }
+        }
+        JSONObject log = planLog();
+        for (java.util.Iterator<String> it = log.keys(); it.hasNext(); ) {
+            String d = it.next();
+            JSONObject o = log.optJSONObject(d);
+            if (o != null) {
+                CoachLogic.PlanDay pd = new CoachLogic.PlanDay();
+                pd.date = d;
+                pd.planned = o.optString("planned");
+                JSONArray ch = o.optJSONArray("changes");
+                for (int i = 0; ch != null && i < ch.length(); i++) {
+                    pd.changes.add(ch.optString(i));
+                }
+                x.planDays.add(pd);
+            }
+        }
+        return x;
     }
 
     /** Minutes after midnight for the morning plan; -1 for no morning notification. */
@@ -205,7 +341,47 @@ public class Coach {
     }
 
     void savePlan(CoachLogic.Plan p) {
+        savePlan(p, null);
+    }
+
+    /**
+     * Stores the plan, and notes it in the plan's history: the first plan of a day is what was
+     * planned, later ones are changes, described by {@code change} (null: not a change).
+     */
+    void savePlan(CoachLogic.Plan p, String change) {
         prefs.edit().putString("coachPlan", Json.write(CoachLogic.planToMap(p))).apply();
+        logPlan(p, change);
+    }
+
+    private synchronized void logPlan(CoachLogic.Plan p, String change) {
+        JSONObject log = planLog();
+        String what = p.rest ? "rest day" : p.title + ", " + p.totalMinutes() + " min";
+        try {
+            JSONObject day = log.optJSONObject(p.date);
+            if (day == null) {
+                day = new JSONObject().put("planned", what).put("changes", new JSONArray());
+            } else if (change != null) {
+                JSONArray changes = day.getJSONArray("changes");
+                String entry = change + ": " + what;
+                if (changes.length() > 0 && entry.equals(changes.optString(changes.length() - 1))) {
+                    return;
+                }
+                changes.put(entry);
+            } else {
+                return;
+            }
+            log.put(p.date, day);
+            prefs.edit().putString("coachPlanLog", pruned(log).toString()).apply();
+        } catch (JSONException ignored) {
+        }
+    }
+
+    private JSONObject planLog() {
+        try {
+            return new JSONObject(prefs.getString("coachPlanLog", "{}"));
+        } catch (JSONException e) {
+            return new JSONObject();
+        }
     }
 
     /** True once today's planned session has been recorded. */
@@ -226,8 +402,35 @@ public class Coach {
 
     /** A plan stored without calling the model (red-flag rest, or undo). */
     public void replacePlan(CoachLogic.Plan p) {
+        replacePlan(p, "changed on the phone");
+    }
+
+    /** As above, saying what the change was for the plan's history. */
+    public void replacePlan(CoachLogic.Plan p, String change) {
         p.date = today();
-        savePlan(p);
+        savePlan(p, change);
+    }
+
+    /**
+     * After a fitness test: today's plan is checked again against the new readiness, on the
+     * phone, so a tired morning softens it without asking the model.
+     */
+    public void applyReadiness() {
+        CoachLogic.Plan p = todayPlan();
+        if (p == null || p.rest || todayDone()) {
+            return;
+        }
+        CoachLogic.Readiness r = readiness();
+        if (r.level != CoachLogic.Readiness.REST && r.level != CoachLogic.Readiness.EASY) {
+            return;
+        }
+        int before = p.adjusted.size();
+        double[] loads = CoachLogic.recentLoads(sessions(), System.currentTimeMillis(),
+                ZoneId.systemDefault());
+        CoachLogic.guard(p, settings(), r, loads[1], loads[0], Prefs.SPORTS);
+        if (p.adjusted.size() > before) {
+            savePlan(p, "softened after the morning test");
+        }
     }
 
     public void refreshPlan(String reason, Callback<CoachLogic.Plan> cb) {
@@ -263,7 +466,7 @@ public class Coach {
                 return;
             }
             try {
-                p = planNow(CoachLogic.harderReason(current));
+                p = planNow(CoachLogic.harderReason(current), null);
                 if (!CoachLogic.isHarder(current, p)) {
                     Log.i(TAG, "model's harder plan wasn't harder; using the fallback");
                     p = null;
@@ -289,7 +492,7 @@ public class Coach {
                 error = "Can't make today harder: it is already as hard as the plan allows, "
                         + "or your resting heart rate says to keep it easy.";
             } else {
-                savePlan(p);
+                savePlan(p, "tapped Harder");
             }
             inFlight.decrementAndGet();
             deliver(cb, p, error);
@@ -298,6 +501,11 @@ public class Coach {
 
     /** Same as {@link #refreshPlan} on the calling (background) thread, for the morning job. */
     CoachLogic.Plan planNow(String reason) throws DeepSeek.ApiException {
+        return planNow(reason, "asked the coach for a new plan");
+    }
+
+    /** {@code change} goes in the plan's history when today already had a plan; null: nothing. */
+    private CoachLogic.Plan planNow(String reason, String change) throws DeepSeek.ApiException {
         CoachLogic.Plan rest = symptomRest();
         if (rest != null) {
             return rest;
@@ -312,7 +520,7 @@ public class Coach {
         long now = System.currentTimeMillis();
         ZoneId zone = ZoneId.systemDefault();
         Map<String, Object> brief = CoachLogic.brief(s, sessions, tests(), r, storedPlan(),
-                HealthSync.forCoach(appContext), now, zone);
+                extras(), now, zone);
         String body = DeepSeek.body(CoachLogic.SYSTEM, CoachLogic.planPrompt(brief, reason), PLAN_TOKENS);
         Map<String, Object> answer = call(key, body);
         CoachLogic.Plan p = CoachLogic.parsePlan(answer, today());
@@ -321,7 +529,10 @@ public class Coach {
         }
         double[] loads = CoachLogic.recentLoads(sessions, now, zone);
         CoachLogic.guard(p, s, r, loads[1], loads[0], Prefs.SPORTS);
-        savePlan(p);
+        savePlan(p, change);
+        if (brief.containsKey("hrMaxCheck") && s.hrMaxRaised.isEmpty()) {
+            prefs.edit().putString("coachHrMaxRaised", today() + "|" + s.hrMax).apply();
+        }
         Log.i(TAG, "coach plan: " + p.title + " " + p.totalMinutes() + " min, adjusted "
                 + p.adjusted);
         return p;
@@ -337,7 +548,7 @@ public class Coach {
         }
         CoachLogic.Plan p = CoachLogic.restPlan(today(), "Your recent session notes mention a "
                 + "symptom. " + CoachLogic.RED_FLAG_REPLY);
-        savePlan(p);
+        savePlan(p, "rest after a symptom in their session notes");
         return p;
     }
 
@@ -349,7 +560,7 @@ public class Coach {
             CoachLogic.Ask a = new CoachLogic.Ask();
             a.reply = CoachLogic.RED_FLAG_REPLY;
             a.plan = CoachLogic.restPlan(today(), "Rest after reporting a symptom.");
-            replacePlan(a.plan);
+            replacePlan(a.plan, "reported a symptom in the chat");
             addChat("coach", a.reply);
             main.post(() -> cb.done(a, null));
             return;
@@ -369,7 +580,7 @@ public class Coach {
                 long now = System.currentTimeMillis();
                 ZoneId zone = ZoneId.systemDefault();
                 Map<String, Object> brief = CoachLogic.brief(s, sessions, tests(), r,
-                        todayPlan(), HealthSync.forCoach(appContext), now, zone);
+                        todayPlan(), extras(), now, zone);
                 List<String[]> history = chat();
                 if (!history.isEmpty()) {
                     history = history.subList(0, history.size() - 1);  // drop this message
@@ -381,9 +592,10 @@ public class Coach {
                 if (a.plan != null) {
                     double[] loads = CoachLogic.recentLoads(sessions, now, zone);
                     CoachLogic.guard(a.plan, s, r, loads[1], loads[0], Prefs.SPORTS);
-                    savePlan(a.plan);
+                    savePlan(a.plan, "changed it in the coach chat");
                 }
                 applySettings(a);
+                remember(a.remember);
                 if (a.reply.isEmpty()) {
                     a.reply = a.plan != null ? "Done \u2014 today's plan is updated." : "OK.";
                 }
@@ -436,7 +648,7 @@ public class Coach {
                     self = info(s);
                 }
                 Map<String, Object> brief = CoachLogic.brief(settings(), history, tests(),
-                        readiness(), null, HealthSync.forCoach(appContext),
+                        readiness(), null, extras(),
                         System.currentTimeMillis(), ZoneId.systemDefault());
                 CoachLogic.Plan plan = s.planTitle.isEmpty() ? null : storedPlan();
                 String body = DeepSeek.body(CoachLogic.SYSTEM,
@@ -488,10 +700,14 @@ public class Coach {
         return prefs.getString("coachLastRequest", null);
     }
 
-    /** Deletes the plan, the conversation, the request log and every session debrief. */
+    /**
+     * Deletes the plan and its history, the conversation, what it remembers, the check-ins,
+     * the request log and every session debrief.
+     */
     public void forget() {
         prefs.edit().remove("coachPlan").remove("coachChat").remove("coachLastRequest")
-                .remove("coachDone").apply();
+                .remove("coachDone").remove("coachPlanLog").remove("coachRemember")
+                .remove("coachCheckIns").remove("coachHrMaxRaised").apply();
         for (SessionStore.Summary s : SessionStore.list(appContext)) {
             if (!s.coachNote.isEmpty()) {
                 s.coachNote = "";
@@ -551,6 +767,14 @@ public class Coach {
         si.pauses = s.pauses;
         si.splits = s.splits;
         si.parts = s.parts;
+        si.talk = s.talk;
+        si.hrMax = s.hrMax;
+        if (!s.coachNote.isEmpty()) {
+            try {
+                si.coachNext = CoachLogic.parseDebrief(Json.parseObject(s.coachNote)).next;
+            } catch (Json.ParseException ignored) {
+            }
+        }
         return si;
     }
 
@@ -559,7 +783,8 @@ public class Coach {
     }
 
     public CoachLogic.Readiness readiness() {
-        return CoachLogic.readiness(tests(), System.currentTimeMillis());
+        return CoachLogic.readiness(tests(), HealthSync.daysForCoach(appContext),
+                System.currentTimeMillis());
     }
 
     private <T> void deliver(Callback<T> cb, T result, String error) {

@@ -45,6 +45,8 @@ public class CoachSetupActivity extends Activity {
     private int minutes;
     private String around;
     private EditText aroundOther;
+    private EditText targetInput;
+    private EditText byInput;
     private int morning;
 
     @Override
@@ -94,6 +96,12 @@ public class CoachSetupActivity extends Activity {
         // ---- the four questions
         section(root, "1 \u00b7 What for?");
         chips(root, GOALS, goal, v -> goal = v);
+        if (!java.util.Arrays.asList(GOALS).contains(goal)) {
+            hint(root, "Now: " + goal);
+        }
+        targetInput = input(root, "A target, if you have one: e.g. 10K under 55 min, "
+                + "resting HR under 55", prefs.getString("coachGoalTarget", ""));
+        byInput = input(root, "By when: e.g. March 2027", prefs.getString("coachGoalBy", ""));
 
         section(root, "2 \u00b7 Days a week");
         String[] dayLabels = new String[DAYS.length];
@@ -152,13 +160,18 @@ public class CoachSetupActivity extends Activity {
         section(root, "What the coach sees");
         LinearLayout seen = card(root);
         line(seen, "\u2713", 0xFF34C759, "Session totals: date, sport, time, distance, average "
-                + "and max heart rate, minutes in each zone, load, how it felt, your notes");
-        line(seen, "\u2713", 0xFF34C759, "Resting heart rate and HRV from fitness tests");
+                + "and max heart rate, minutes in each zone, km splits, load, how it felt, the "
+                + "talk test, your notes, and trends worked out from them");
+        line(seen, "\u2713", 0xFF34C759, "Resting heart rate, HRV and VO2max from fitness tests");
+        line(seen, "\u2713", 0xFF34C759, "Your morning check-ins, what was planned each day and "
+                + "what you changed, and what the coach keeps in mind");
         if (Prefs.moveOn(this)) {
-            line(seen, "\u2713", 0xFF34C759, "Move minutes per day for the last week, from "
-                    + "Health Connect (minutes only, not the steps or workouts behind them)");
+            line(seen, "\u2713", 0xFF34C759, "From Health Connect, per day for two weeks: move "
+                    + "minutes, steps, km, hours of sleep and when, resting heart rate and HRV "
+                    + "(daily totals only, not the records behind them)");
         }
-        line(seen, "\u2713", 0xFF34C759, "Age, sex, weight, max heart rate, your answers above");
+        line(seen, "\u2713", 0xFF34C759, "Age, sex, weight, max heart rate and where it came "
+                + "from, your answers above");
         line(seen, "\u2715", 0xFFFF6961, "Never: GPS routes or location, second-by-second heart "
                 + "rate, beat-to-beat (RR) data, your name, contacts");
 
@@ -167,8 +180,9 @@ public class CoachSetupActivity extends Activity {
         Button forget = button(root, "Delete everything the coach remembers");
         forget.setTextColor(0xFFFF6961);
         forget.setOnClickListener(v -> new AlertDialog.Builder(this)
-                .setMessage("Delete today's plan, the conversation, the request log and all "
-                        + "session debriefs? Your sessions themselves stay.")
+                .setMessage("Delete today's plan and its history, the conversation, what the "
+                        + "coach keeps in mind, your check-ins, the request log and all session "
+                        + "debriefs? Your sessions themselves stay.")
                 .setPositiveButton("Delete", (d, w) -> {
                     coach.forget();
                     Toast.makeText(this, "Coach memory deleted", Toast.LENGTH_SHORT).show();
@@ -234,11 +248,16 @@ public class CoachSetupActivity extends Activity {
         }
         boolean on = onSwitch.isChecked();
         String other = aroundOther.getText().toString().trim();
+        String target = CoachLogic.trim(targetInput.getText().toString(), 120);
+        String by = CoachLogic.trim(byInput.getText().toString(), 40);
         boolean changed = !goal.equals(prefs.getString("coachGoal", ""))
+                || !target.equals(prefs.getString("coachGoalTarget", ""))
+                || !by.equals(prefs.getString("coachGoalBy", ""))
                 || days != prefs.getInt("coachDays", -1)
                 || minutes != prefs.getInt("coachMinutes", -1);
         prefs.edit().putBoolean("coachOn", on).putBoolean("coachSetUp", true)
                 .putString("coachGoal", goal).putInt("coachDays", days)
+                .putString("coachGoalTarget", target).putString("coachGoalBy", by)
                 .putInt("coachMinutes", minutes)
                 .putString("coachWorkAround", other.isEmpty() ? around : CoachLogic.trim(other, 80))
                 .putInt("coachMorning", morning).apply();
@@ -364,6 +383,18 @@ public class CoachSetupActivity extends Activity {
         TextView t = Ui.text(this, text, 13, Ui.TEXT2);
         t.setPadding(0, Ui.dp(this, 6), 0, Ui.dp(this, 4));
         parent.addView(t);
+    }
+
+    private EditText input(LinearLayout parent, String hint, String value) {
+        EditText e = new EditText(this);
+        e.setHint(hint);
+        e.setText(value);
+        e.setTextColor(Ui.TEXT);
+        e.setTextSize(15);
+        e.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
+        e.setSingleLine();
+        parent.addView(e);
+        return e;
     }
 
     private Button button(LinearLayout parent, String text) {

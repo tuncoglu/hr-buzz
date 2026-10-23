@@ -353,6 +353,9 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
             coachCard.addView(gap(Ui.text(this, r.text, 13,
                     r.level == CoachLogic.Readiness.READY ? 0xFF34C759 : 0xFFFFC400), 2));
         }
+        if (!coach.todayDone()) {
+            showCheckIn(coach);
+        }
 
         CoachLogic.Plan plan = coach.todayPlan();
         if (plan == null) {
@@ -437,15 +440,15 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
             chips.addView(chip("I want to train", () -> refreshPlan("They want to train today "
                     + "after all; plan something suitable.")), chipLp());
         } else {
-            chips.addView(chip("Not today", () -> change(CoachLogic.notToday(plan, plan.date))),
-                    chipLp());
+            chips.addView(chip("Not today", () -> change(CoachLogic.notToday(plan, plan.date),
+                    "tapped Not today")), chipLp());
             chips.addView(chip("Shorter", () -> {
                 CoachLogic.Plan shorter = CoachLogic.shorter(plan);
                 if (shorter == null) {
                     Toast.makeText(this, "It's already as short as it gets", Toast.LENGTH_SHORT)
                             .show();
                 } else {
-                    change(shorter);
+                    change(shorter, "tapped Shorter");
                 }
             }), chipLp());
             chips.addView(chip("Harder", () -> {
@@ -465,7 +468,7 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
         }
         if (previousPlan != null) {
             chips.addView(chip("Undo", () -> {
-                Coach.get(this).replacePlan(previousPlan);
+                Coach.get(this).replacePlan(previousPlan, "undid the last change");
                 previousPlan = null;
                 coachError = null;
                 showCoach();
@@ -475,12 +478,67 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
     }
 
     /** A one-tap change made on the phone: instant, and undoable. */
-    private void change(CoachLogic.Plan next) {
+    private void change(CoachLogic.Plan next, String what) {
         CoachLogic.Plan current = Coach.get(this).todayPlan();
         previousPlan = current == null ? null : CoachLogic.copy(current);
         coachError = null;
-        Coach.get(this).replacePlan(next);
+        Coach.get(this).replacePlan(next, what);
         showCoach();
+    }
+
+    private static final String[] SLEPT = {"Well", "OK", "Badly"};
+    private static final String[] GUT = {"Fine", "Off"};
+
+    /**
+     * The morning check-in (how they slept, how their digestion is) until both are answered,
+     * and the resting test while there is none from the last day: what readiness runs on.
+     */
+    private void showCheckIn(Coach coach) {
+        int[] answers = coach.checkIn();
+        if (answers[0] == 0 || answers[1] == 0) {
+            coachCard.addView(checkInRow("Slept", SLEPT, answers[0],
+                    v -> coach.setCheckIn(v, -1)), btnLp(8));
+            coachCard.addView(checkInRow("Digestion", GUT, answers[1],
+                    v -> coach.setCheckIn(-1, v)), btnLp(6));
+        }
+        List<CoachLogic.Test> tests = Prefs.fitnessTests(this);
+        long last = tests.isEmpty() ? 0 : tests.get(tests.size() - 1).t;
+        if (System.currentTimeMillis() - last > 20 * 3600 * 1000L) {
+            TextView test = Ui.text(this, "Take the 5-minute resting test, so today matches how "
+                    + "you recovered", 13, 0xFF4F8EF7);
+            test.setPadding(0, Ui.dp(this, 8), 0, Ui.dp(this, 4));
+            test.setOnClickListener(v -> startActivity(new Intent(this, FitnessTestActivity.class)));
+            coachCard.addView(test);
+        }
+    }
+
+    /** A label and chips; tapping saves 1-based, tapping the chosen one again clears it. */
+    private LinearLayout checkInRow(String label, String[] options, int chosen,
+                                    java.util.function.IntConsumer save) {
+        LinearLayout row = new LinearLayout(this);
+        row.setGravity(Gravity.CENTER_VERTICAL);
+        TextView name = Ui.text(this, label, 14, Ui.TEXT2);
+        row.addView(name, new LinearLayout.LayoutParams(Ui.dp(this, 84),
+                ViewGroup.LayoutParams.WRAP_CONTENT));
+        LinearLayout chips = new LinearLayout(this);
+        for (int i = 0; i < options.length; i++) {
+            final int value = i + 1;
+            TextView chip = Ui.chip(this, options[i]);
+            chip.setTextSize(14);
+            chip.setSelected(chosen == value);
+            chip.setOnClickListener(v -> {
+                int next = v.isSelected() ? 0 : value;
+                Ui.select(chips, next - 1);
+                save.accept(next);
+                int[] a = Coach.get(this).checkIn();
+                if (a[0] > 0 && a[1] > 0) {
+                    showCoach();        // both answered: the check-in folds away
+                }
+            });
+            chips.addView(chip);
+        }
+        row.addView(chips);
+        return row;
     }
 
     private Button chip(String text, Runnable action) {

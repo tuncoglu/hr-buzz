@@ -12,6 +12,7 @@ import android.util.Log;
 
 import java.time.DayOfWeek;
 import java.time.LocalDate;
+import java.util.List;
 
 /**
  * The morning plan: runs once a day at the chosen time (when there is a network), asks the
@@ -77,6 +78,15 @@ public class CoachJob extends JobService {
                 .setContentIntent(open)
                 .setAutoCancel(true)
                 .setCategory(Notification.CATEGORY_REMINDER);
+        List<CoachLogic.Test> tests = Prefs.fitnessTests(c);
+        long lastTest = tests.isEmpty() ? 0 : tests.get(tests.size() - 1).t;
+        if (!p.rest && System.currentTimeMillis() - lastTest > 20 * 3600 * 1000L) {
+            // A morning test lets the phone soften today if the body has not recovered.
+            PendingIntent test = PendingIntent.getActivity(c, 12,
+                    new Intent(c, FitnessTestActivity.class),
+                    PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+            b.addAction(new Notification.Action.Builder(null, "Resting test first", test).build());
+        }
         if (!p.rest) {
             PendingIntent start = PendingIntent.getActivity(c, 11,
                     new Intent(c, MainActivity.class).putExtra(MainActivity.EXTRA_START_PLAN, true)

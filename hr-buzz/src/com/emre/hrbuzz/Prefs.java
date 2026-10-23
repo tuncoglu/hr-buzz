@@ -113,6 +113,15 @@ final class Prefs {
         return set > 0 ? set : Training.ageHrMax(age(c));
     }
 
+    /** Where {@link #hrMax} comes from, in words for the coach. */
+    static String hrMaxSource(Context c) {
+        if (hrMaxAuto(c)) {
+            return hrMaxUsedPeak(c) > Training.ageHrMax(age(c))
+                    ? "their highest recorded peak" : "the age formula (220 - age)";
+        }
+        return hrMaxSetting(c) > 0 ? "typed in by them in settings" : "the age formula (220 - age)";
+    }
+
     /** Re-reads the year's sessions for their highest peak (slow: off the main thread). */
     static void refreshHrMaxSeen(Context c) {
         long[] best = SessionStore.peakHr(c);
@@ -148,7 +157,8 @@ final class Prefs {
             JSONArray a = new JSONArray(of(c).getString("fitnessTests", "[]"));
             for (int i = 0; i < a.length(); i++) {
                 JSONObject o = a.getJSONObject(i);
-                out.add(new CoachLogic.Test(o.getLong("t"), o.getInt("rest"), o.optInt("rmssd")));
+                out.add(new CoachLogic.Test(o.getLong("t"), o.getInt("rest"), o.optInt("rmssd"),
+                        o.optInt("vo2")));
             }
         } catch (JSONException ignored) {
         }

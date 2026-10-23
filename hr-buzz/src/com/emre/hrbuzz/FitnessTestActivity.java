@@ -290,6 +290,17 @@ public class FitnessTestActivity extends Activity implements HrManager.Listener 
             sb.append("\n\nYour profile keeps the resting heart rate you entered; switch it to "
                     + "\"From fitness tests\" in Settings to follow these results.");
         }
+        Coach coach = Coach.get(this);
+        if (coach.isEnabled()) {
+            CoachLogic.Plan before = coach.todayPlan();
+            int adjusted = before == null ? 0 : before.adjusted.size();
+            coach.applyReadiness();
+            CoachLogic.Plan after = coach.todayPlan();
+            if (after != null && after.adjusted.size() > adjusted) {
+                sb.append("\n\nToday's plan is now easier: ")
+                        .append(after.adjusted.get(after.adjusted.size() - 1)).append('.');
+            }
+        }
         result.setText(sb.toString());
         showHistory();
     }

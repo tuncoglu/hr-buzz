@@ -172,16 +172,24 @@ public class SettingsActivity extends Activity {
         // ---- move minutes
         section(root, "Activity");
         LinearLayout activity = card(root);
-        LinearLayout moveRow = row(activity, "Move minutes");
+        LinearLayout moveRow = row(activity, "Health Connect");
         moveSwitch = new Switch(this);
         moveSwitch.setChecked(Prefs.moveOn(this) && HealthSync.granted(this));
         moveSwitch.setOnCheckedChangeListener((b, on) -> setMove(on));
         moveRow.addView(moveSwitch);
         hint(activity, "Reads steps and workouts from Health Connect (where Google Fit, "
                 + "Fitbit, Pixel Watch and most fitness apps save them) and counts the minutes "
-                + "you were moving. It shows on the home screen, and the coach is told the "
-                + "daily totals so it knows how active you are between sessions. Read-only; "
-                + "nothing is written back.");
+                + "you were moving, shown on the home screen. If you allow them, it also reads "
+                + "sleep, distance, resting heart rate and HRV from your watch. The coach is "
+                + "told the daily totals, so it knows how active and rested you are between "
+                + "sessions. Read-only; nothing is written back.");
+        if (Prefs.moveOn(this) && HealthSync.granted(this) && HealthSync.missingOptional(this)) {
+            Button more = new Button(this, null, 0, R.style.SecondaryButton);
+            more.setText("Allow sleep, distance and heart data");
+            more.setAllCaps(false);
+            more.setOnClickListener(v -> requestPermissions(HealthSync.PERMISSIONS, REQ_HEALTH));
+            activity.addView(more);
+        }
 
         // ---- training screen
         section(root, "Training screen");

@@ -52,24 +52,29 @@ An LLM coach built to take as little effort as possible. It talks first, and you
 - **Debrief** on the summary right after Finish: two or three lines with one concrete comparison to your history, and what's next. Older sessions and ones under 5 minutes get it on request, so browsing and false starts cost nothing.
 - **Ask.** Suggestion chips, typing or speech. Answers that change today come back as an updated plan with **Start now** and **Undo**. "I can do 5 days now" updates the settings.
 - **Morning notification** at your chosen time with today's plan and a Start button (a JobScheduler job, so it waits for a network and survives reboots). Sundays open with a one-line recap.
-- **Setup is four taps** (goal, days a week, minutes, anything to work around). It already knows your zones, profile and last 8 weeks.
+- **Setup is four taps** (goal, days a week, minutes, anything to work around), plus an optional target and date. It already knows your zones, profile and last 12 weeks.
+- **Talk test.** The summary asks whether you could talk in full sentences, short phrases or a few words. The debrief waits for the answer, and the coach checks your zones against it.
+- **Morning check-in.** Two taps on the home card (how you slept, how your digestion is) and a link to the resting test while you haven't done one today; the morning notification has a **Resting test first** button. A test that shows you're tired softens today's plan on the phone, without calling the model.
+- **Progress worked out on the phone.** Per week: km, median pace, heart rate and metres per heartbeat from the km splits, run pace at the same heart rate, and heart-rate drift within each run. The model reads trends instead of doing sums.
+- **Max HR check.** The coach is told where your max HR came from, the age estimate and your highest recorded peak, and which long sessions averaged 88% of max or more. A habit of those usually means the max is set too low; the coach raises it once and asks how they felt.
+- **Memory.** Lasting things you tell it in the chat (a preference, an injury, what training does for you) are kept, listed in the coach screen, and can be forgotten one by one. The coach also sees the last two weeks of what was planned, what you changed and what you did, and what it told you after each session.
 
 The model proposes; the phone decides. `CoachLogic.guard` checks every plan before it can run:
 
 - It must be a valid shape. Sports and zones are clamped, and a session can be at most 4 hours (or your usual length while there are no recent sessions to build on).
-- Readiness from your morning fitness tests caps it: resting HR up ≥ 8 bpm or HRV down 25% makes it easy, smaller rises soften the hard parts.
+- Readiness from your morning fitness tests caps it: resting HR up ≥ 8 bpm or HRV down 25% makes it easy, smaller rises soften the hard parts. Without a recent test, your watch's resting HR and HRV from Health Connect are compared with its own earlier days.
 - There is no weekly volume cap; the coach judges a heavy week by recovery and intensity mix, not a percentage rise.
 - Any mention of chest pain or tightness, arm or jaw pain, fainting, dizziness, palpitations, an irregular heartbeat or unusual breathlessness, in the chat or in a session's notes, never reaches the model. The phone answers "stop and see a doctor" and makes today a rest day (for 48 hours after a note like that).
 - Step limits allow 5 bpm over the top of the zone. Zone-1-only steps (walks, cool-downs) keep only your own limit, and when a step lowers the limit you get 90 s to come down before it beeps.
 
 Privacy, as shown in Coach settings:
 
-- **Sent:** session totals (date, sport, time, distance, average/max HR, minutes per zone, load, feeling, notes), fitness-test resting HR/HRV, and age, sex, weight, max HR and your setup answers.
+- **Sent:** session totals (date, sport, time, distance, average/max HR, minutes per zone, km splits, load, feeling, talk test, notes) and trends computed from them, fitness-test resting HR/HRV/VO2max, check-ins, the plan's two-week history, what the coach keeps in mind, Health Connect daily totals if on, and age, sex, weight, max HR (and its source) and your setup answers.
 - **Never sent:** GPS or location, second-by-second HR, RR data, your name.
 - **Your key:** stored encrypted with an Android keystore key and only sent to `api.deepseek.com` over HTTPS (cleartext is disabled app-wide).
-- **Controls:** *See the last message sent* shows the exact request. *Delete everything the coach remembers* wipes the plan, the conversation, the request log and the debriefs.
+- **Controls:** *See the last message sent* shows the exact request. *Delete everything the coach remembers* wipes the plan and its history, the conversation, what it keeps in mind, the check-ins, the request log and the debriefs.
 
-Model: `deepseek-flash` via `https://api.deepseek.com/chat/completions`, with JSON output mode and thinking disabled for quick, structured replies. The model is called only at four moments: the morning plan, after Finish, Sunday, and when you ask. You need your own DeepSeek API key (platform.deepseek.com).
+Model: `deepseek-flash` via `https://api.deepseek.com/chat/completions`, with JSON output mode and thinking on (high effort), so plans and debriefs are reasoned through. The model is called only at four moments: the morning plan, after Finish, Sunday, and when you ask. You need your own DeepSeek API key (platform.deepseek.com).
 
 ## Move minutes (optional, Health Connect)
 
@@ -77,8 +82,9 @@ Settings → Activity → **Move minutes** reads your steps and workouts from He
 
 - **Not Google Fit.** The Fit APIs are being shut down and have no replacement for apps without a server; Health Connect is the on-device successor. Android 14 or newer (it is part of the system there, so no library is added).
 - **Our own count.** Fit's "Move Minutes" has no Health Connect equivalent, so a minute counts when it has at least 50 steps or falls inside a workout (HR Buzz's own sessions count too). Steps written by two devices for the same walk are not added together. It will be close to what Fit showed, not identical.
-- **Read-only, last 7 days.** Nothing is written to Health Connect. Health Connect only allows reading while the app is open, so the count is refreshed when you open HR Buzz and the morning plan uses the last one.
-- **Privacy.** On the phone, plus, if the coach is on, the seven daily minute totals sent to DeepSeek (never the steps, times or workouts). Turning it off forgets the count.
+- **Sleep, distance and heart data.** If you also allow them, the last 14 days of sleep (hours, when you fell asleep and woke), steps, km, resting heart rate and HRV are read for the coach. Steps and workouts are all move minutes need; the rest is optional (Settings → Activity → *Allow sleep, distance and heart data*).
+- **Read-only.** Nothing is written to Health Connect. Health Connect only allows reading while the app is open, so the data is refreshed when you open HR Buzz and the morning plan uses the last read.
+- **Privacy.** On the phone, plus, if the coach is on, the daily totals sent to DeepSeek (never the records, times or workouts behind them). Turning it off forgets them.
 
 ## Zones and calories
 

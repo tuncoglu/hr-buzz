@@ -68,6 +68,8 @@ final class SessionStore {
         int weight;
         /** 0 = not rated, 1..5 = how it felt. */
         int feeling;
+        /** Talk test: 0 = not answered, 1 full sentences, 2 short phrases, 3 a few words. */
+        int talk;
         String notes = "";
         /** Coached workout this followed, or "" for a free session. */
         String planTitle = "";
@@ -124,7 +126,7 @@ final class SessionStore {
                     .put("kcal", kcal)
                     .put("trimp", trimp).put("bestSpeed", bestSpeed)
                     .put("hrMax", hrMax).put("male", male).put("age", age).put("weight", weight)
-                    .put("feeling", feeling).put("notes", notes)
+                    .put("feeling", feeling).put("talk", talk).put("notes", notes)
                     .put("planTitle", planTitle).put("targetPct", targetPct)
                     .put("coachNote", coachNote).put("imported", imported);
             JSONArray z = new JSONArray();
@@ -189,6 +191,7 @@ final class SessionStore {
             s.age = o.optInt("age", 40);
             s.weight = o.optInt("weight", 75);
             s.feeling = o.optInt("feeling");
+            s.talk = o.optInt("talk");
             s.notes = o.optString("notes", "");
             s.planTitle = o.optString("planTitle", "");
             s.targetPct = o.optInt("targetPct", -1);

@@ -200,6 +200,28 @@ public class CoachActivity extends Activity {
             }
         }
 
+        List<String> kept = coach.remembered();
+        if (!kept.isEmpty()) {
+            section("What the coach keeps in mind");
+            LinearLayout list = card();
+            for (String item : kept) {
+                LinearLayout row = new LinearLayout(this);
+                row.setGravity(Gravity.CENTER_VERTICAL);
+                row.addView(Ui.text(this, "\u2022 " + item, 14, 0xFFC8C8CE),
+                        new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+                TextView remove = Ui.text(this, "Forget", 13, 0xFF4F8EF7);
+                remove.setPadding(Ui.dp(this, 12), Ui.dp(this, 8), 0, Ui.dp(this, 8));
+                remove.setOnClickListener(v -> {
+                    coach.forgetItem(item);
+                    render();
+                });
+                row.addView(remove);
+                list.addView(row);
+            }
+            list.addView(gap(Ui.text(this, "Picked up from your messages and sent with every "
+                    + "plan.", 12, Ui.TEXT3), 6));
+        }
+
         section("Conversation");
         List<String[]> chat = coach.chat();
         if (chat.isEmpty()) {
@@ -286,7 +308,7 @@ public class CoachActivity extends Activity {
             u.setText("Undo");
             u.setAllCaps(false);
             u.setOnClickListener(v -> {
-                coach.replacePlan(undo);
+                coach.replacePlan(undo, "undid the coach chat's change");
                 undo = null;
                 showUpdated = false;
                 Toast.makeText(this, "Back to the previous plan", Toast.LENGTH_SHORT).show();

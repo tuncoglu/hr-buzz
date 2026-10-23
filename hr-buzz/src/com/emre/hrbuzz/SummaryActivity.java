@@ -32,6 +32,7 @@ public class SummaryActivity extends Activity {
     static final String EXTRA_ID = "id";
 
     private static final String[] FEELINGS = {"Awful", "Poor", "OK", "Good", "Great"};
+    private static final String[] TALK = {"Full sentences", "Short phrases", "A few words"};
     /** Shorter sessions (false starts, tests) get a debrief only on request: each one costs a call. */
     private static final long AUTO_DEBRIEF_MS = 5 * 60000L;
 
@@ -40,6 +41,8 @@ public class SummaryActivity extends Activity {
     private LinearLayout coachBox;
     private boolean debriefing;
     private String debriefError;
+    /** They chose a debrief without answering the talk test. */
+    private boolean talkSkipped;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -138,6 +141,34 @@ public class SummaryActivity extends Activity {
                     + Training.duration(walked[0]) + " \u00b7 "
                     + Training.km(walked[1]) + " km, included above", 14, Ui.TEXT2));
         }
+
+        // ---- talk test: how hard it really was, whatever the zones say
+        section(root, "In the main part, could you talk?");
+        LinearLayout talk = new LinearLayout(this);
+        for (int i = 0; i < TALK.length; i++) {
+            final int value = i + 1;
+            TextView chip = Ui.chip(this, TALK[i]);
+            chip.setSelected(s.talk == value);
+            chip.setOnClickListener(v -> {
+                summary.talk = summary.talk == value ? 0 : value;
+                Ui.select(talk, summary.talk - 1);
+                saveSummary();
+                if (coachBox != null && summary.coachNote.isEmpty() && !debriefing) {
+                    fillCoach();        // a waiting debrief starts once it is answered
+                }
+            });
+            talk.addView(chip);
+        }
+        android.widget.HorizontalScrollView talkScroll = new android.widget.HorizontalScrollView(this);
+        talkScroll.setHorizontalScrollBarEnabled(false);
+        talkScroll.addView(talk);
+        LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        tl.topMargin = Ui.dp(this, 10);
+        root.addView(talkScroll, tl);
+        root.addView(Ui.text(this, "The coach checks your zones against this: if \"easy\" "
+                + "runs keep coming out as hard by heart rate, your max heart rate may be off.",
+                13, Ui.TEXT3));
 
         // ---- the coach's debrief
         if (!s.coachNote.isEmpty() || Coach.get(this).isEnabled()) {
@@ -260,8 +291,8 @@ public class SummaryActivity extends Activity {
 
     /**
      * Shows the stored debrief; for a session of 5 minutes or more that just finished, asks for
-     * one by itself, otherwise offers a button (so opening an old session or a false start
-     * never spends a request).
+     * one by itself once the talk test is answered (or skipped), otherwise offers a button (so
+     * opening an old session or a false start never spends a request).
      */
     private void fillCoach() {
         coachBox.removeAllViews();
@@ -302,6 +333,16 @@ public class SummaryActivity extends Activity {
         boolean fresh = System.currentTimeMillis() - Math.max(summary.end, summary.id)
                 < 3 * 3600 * 1000L;
         if (fresh && debriefError == null && summary.activeMs >= AUTO_DEBRIEF_MS) {
+            if (summary.talk == 0 && !talkSkipped) {
+                coachBox.addView(padTop(Ui.text(this, "Answer \"could you talk?\" above and "
+                        + "the coach will debrief this session with it.", 15, Ui.TEXT2)));
+                Button now = button(coachBox, "Debrief without it", false);
+                now.setOnClickListener(v -> {
+                    talkSkipped = true;
+                    debrief();
+                });
+                return;
+            }
             debrief();
             return;
         }
