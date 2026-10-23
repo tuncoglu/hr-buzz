@@ -301,7 +301,7 @@ public final class CoachLogic {
     public static Plan guard(Plan p, Settings s, Readiness r, double lastWeekLoad,
                              double doneThisWeek, String[] sports) {
         p.title = trim(p.title, 40);
-        p.message = trim(p.message, 600);
+        p.message = trim(p.message, MAX_NOTE);
         if (!Arrays.asList(sports).contains(p.sport)) {
             p.sport = "Running";
         }
@@ -374,7 +374,7 @@ public final class CoachLogic {
         if (p.totalMinutes() != askedMinutes) {
             // The model's words were written for the longer session: say what it is now.
             p.message = trim(p.message + " Today is " + p.totalMinutes() + " min after the "
-                    + "app's safety checks.", 600);
+                    + "app's safety checks.", MAX_NOTE);
         }
         return p;
     }
@@ -789,6 +789,8 @@ public final class CoachLogic {
 
     /** The longest session the coach plans: 4 hours, for long days and marathon builds. */
     static final int MAX_SESSION_MINUTES = 240;
+    /** Longest plan note kept whole: the coach screen shows all of it. */
+    static final int MAX_NOTE = 1500;
     static final int HISTORY_WEEKS = 12;
 
     /**

@@ -125,6 +125,10 @@ public final class CoachTest {
         CoachLogic.Plan longDay = CoachLogic.guard(plan(new int[]{180, 2, 2}), s, ready, 1000, 0,
                 SPORTS);
         eq("a 3 hour easy day is left alone", 180, longDay.totalMinutes());
+        CoachLogic.Plan wordy = plan(new int[]{40, 2, 2});
+        wordy.message = "x".repeat(1200);
+        CoachLogic.guard(wordy, s, ready, 1000, 0, SPORTS);
+        eq("a long coach note is kept whole", 1200, wordy.message.length());
 
         CoachLogic.Plan empty = CoachLogic.guard(plan(), s, ready, 200, 0, SPORTS);
         ok("no steps -> rest", empty.rest);
