@@ -76,6 +76,8 @@ public class Coach {
     private Coach(Context context) {
         this.appContext = context;
         this.prefs = Prefs.of(context);
+        // Timings only (no key, no text): where a slow coach request spends its time.
+        DeepSeek.trace = note -> Log.i(TAG, "api: " + note);
     }
 
     // --------------------------------------------------------------- settings

@@ -32,8 +32,18 @@ public final class DeepSeek {
         }
     }
 
+    /** Where timing notes go; the Android side points this at logcat. Off (null) on a plain JVM. */
+    public static volatile java.util.function.Consumer<String> trace;
+
     private final String endpoint;
     private final int readTimeoutMs;
+
+    private static void note(String text) {
+        java.util.function.Consumer<String> t = trace;
+        if (t != null) {
+            t.accept(text);
+        }
+    }
 
     public DeepSeek() {
         this(ENDPOINT, 240000);
@@ -66,6 +76,7 @@ public final class DeepSeek {
     public Map<String, Object> ask(String apiKey, String body) throws ApiException {
         ApiException last = null;
         for (int attempt = 0; attempt < 2; attempt++) {
+            note("attempt " + (attempt + 1) + " sending " + body.length() + " chars");
             String content = complete(apiKey, body);
             if (content == null || content.trim().isEmpty()) {
                 last = new ApiException(0, "The coach sent an empty answer");
@@ -83,6 +94,7 @@ public final class DeepSeek {
     /** Raw message content of the first choice. */
     String complete(String apiKey, String body) throws ApiException {
         HttpURLConnection c = null;
+        long t0 = System.currentTimeMillis();
         try {
             c = (HttpURLConnection) URI.create(endpoint).toURL().openConnection();
             c.setRequestMethod("POST");
@@ -97,8 +109,14 @@ public final class DeepSeek {
             try (OutputStream os = c.getOutputStream()) {
                 os.write(out);
             }
+            long sent = System.currentTimeMillis();
+            note("request sent after " + (sent - t0) + " ms (connect and upload)");
             int code = c.getResponseCode();
+            long headers = System.currentTimeMillis();
+            note("answer started after " + (headers - sent) + " ms, status " + code);
             String text = read(code >= 400 ? c.getErrorStream() : c.getInputStream());
+            note("answer read after " + (System.currentTimeMillis() - headers) + " ms, "
+                    + text.length() + " chars, " + usage(text));
             if (code != 200) {
                 throw new ApiException(code, explain(code, text));
             }
@@ -110,6 +128,7 @@ public final class DeepSeek {
             Map<String, Object> message = Json.obj(Json.obj(choices.get(0)).get("message"));
             return Json.str(message, "content", null);
         } catch (IOException e) {
+            note("failed after " + (System.currentTimeMillis() - t0) + " ms: " + e);
             throw new ApiException(-1, "Couldn't reach DeepSeek \u2014 check your connection");
         } catch (Json.ParseException | RuntimeException e) {
             throw new ApiException(0, "Unexpected answer from DeepSeek");
@@ -117,6 +136,18 @@ public final class DeepSeek {
             if (c != null) {
                 c.disconnect();
             }
+        }
+    }
+
+    /** The token counts from a reply, for the trace; "" when it has none. */
+    private static String usage(String text) {
+        try {
+            Map<String, Object> u = Json.obj(Json.parseObject(text).get("usage"));
+            return "tokens " + Json.str(u, "completion_tokens", "?")
+                    + " out, " + Json.str(Json.obj(u.get("completion_tokens_details")),
+                    "reasoning_tokens", "?") + " reasoning";
+        } catch (Json.ParseException | RuntimeException e) {
+            return "no usage";
         }
     }
 
