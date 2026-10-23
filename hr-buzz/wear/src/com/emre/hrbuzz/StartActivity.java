@@ -271,10 +271,14 @@ public class StartActivity extends Activity implements WristHr.Listener {
         // the coach's plan for today, one tap from here
         Coach coach = Coach.get(this);
         CoachLogic.Plan today = coach.isEnabled() ? coach.todayPlan() : null;
+        // "Coach" stays in the label, with today's plan under it, so it always reads as the coach.
         String coachLabel = today == null ? "Coach"
-                : today.rest ? "Coach \u00b7 rest day" : today.title + " \u00b7 " + today.totalMinutes() + " min";
-        Button coachButton = Wu.button(this, coachLabel, Wu.CARD, Wu.TEXT, 48);
+                : "Coach\n" + (today.rest ? "Rest day"
+                        : today.title + " \u00b7 " + today.totalMinutes() + " min");
+        Button coachButton = Wu.button(this, coachLabel, Wu.CARD, Wu.TEXT, today == null ? 48 : 68);
         coachButton.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 17 * Wu.unit(this));
+        coachButton.setContentDescription(today == null ? "Coach"
+                : "Coach: " + coachLabel.substring(coachLabel.indexOf('\n') + 1));
         coachButton.setOnClickListener(v -> startActivity(new Intent(this, WearCoachActivity.class)));
         page.addView(coachButton);
         page.addView(Wu.space(this, 10));
