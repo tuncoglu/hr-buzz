@@ -199,6 +199,15 @@ public final class CoachTest {
         eq("step at 30:00", 2, CoachLogic.stepAt(p.steps, 1800000));
         eq("done at 35:00", 3, CoachLogic.stepAt(p.steps, 2100000));
         eq("step 2 starts", 1800000L, CoachLogic.stepStart(p.steps, 2));
+        int[] walk = CoachLogic.targetBand(p.steps.get(2), 155);
+        eq("zone-1 step counts from zone 1", 78, walk[0]);
+        eq("zone-1 step counts up to the top of zone 2", 108, walk[1]);
+        eq("zone 2 step stays zone 2", 108, CoachLogic.targetBand(p.steps.get(1), 155)[1]);
+        eq("cue cut at a sentence", "Stay under 108 bpm.",
+                CoachLogic.trimSentence("Stay under 108 bpm. At 9.5 to 11 minutes per km this "
+                        + "lands near 11 km, and that is plenty for today.", 60));
+        eq("one long sentence still cut", 60,
+                CoachLogic.trimSentence("x".repeat(80), 60).length());
     }
 
     private static void oneTap() {
@@ -527,6 +536,7 @@ public final class CoachTest {
 
         List<Object> health = Json.list(b.get("health"));
         eq("only days with data", 1, health.size());
+        eq("today is marked as a part day", true, Json.obj(health.get(0)).get("soFarToday"));
         eq("sleep hours", 6.9, Json.obj(health.get(0)).get("sleepHours"));
         eq("check-in in words", "badly", Json.obj(Json.list(b.get("checkIns")).get(0)).get("slept"));
         Map<String, Object> ph = Json.obj(Json.list(b.get("planHistory")).get(0));

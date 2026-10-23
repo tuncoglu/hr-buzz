@@ -406,7 +406,7 @@ public final class CoachLogic {
                 break;
             }
             st.name = trim(st.name, 30);
-            st.cue = trim(st.cue, 120);
+            st.cue = trimSentence(st.cue, 120);
             st.minutes = clamp(st.minutes, 0, MAX_SESSION_MINUTES);
             st.zoneLow = clamp(st.zoneLow, 1, 5);
             st.zoneHigh = clamp(st.zoneHigh, 1, 5);
@@ -1158,6 +1158,9 @@ public final class CoachLogic {
                 continue;
             }
             Map<String, Object> m = Json.map("date", d.date);
+            if (d.date.equals(today.toString())) {
+                m.put("soFarToday", true);      // a part day: never read it as a low day
+            }
             if (d.sleepMinutes >= 0) {
                 m.put("sleepHours", Math.round(d.sleepMinutes / 6.0) / 10.0);
                 if (!d.asleep.isEmpty()) {
@@ -1589,6 +1592,27 @@ public final class CoachLogic {
         }
         s = s.trim();
         return s.length() <= max ? s : s.substring(0, max - 1).trim() + "\u2026";
+    }
+
+    /** Like {@link #trim}, but ends at the last whole sentence that fits: cues are spoken. */
+    static String trimSentence(String s, int max) {
+        String t = trim(s, max);
+        if (!t.endsWith("\u2026")) {
+            return t;
+        }
+        int end = Math.max(t.lastIndexOf(". "), Math.max(t.lastIndexOf("! "), t.lastIndexOf("? ")));
+        return end > 0 ? t.substring(0, end + 1) : t;
+    }
+
+    /**
+     * The bpm band a step's time counts as "in target". A zone-1-only step (warm-up, walk,
+     * cool-down) counts up to the top of zone 2, the way its alerts only keep their own limit:
+     * an ordinary walk often sits in zone 2 and is not off-plan.
+     */
+    static int[] targetBand(Step st, int hrMax) {
+        int top = st.zoneHigh == 1 ? 2 : st.zoneHigh;
+        return new int[]{Training.zoneFloor(st.zoneLow, hrMax),
+                top >= 5 ? Integer.MAX_VALUE : Training.zoneFloor(top + 1, hrMax) - 1};
     }
 
     static int clamp(int v, int lo, int hi) {

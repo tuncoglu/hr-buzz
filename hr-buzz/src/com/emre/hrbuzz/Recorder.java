@@ -93,6 +93,10 @@ public class Recorder implements HrManager.Listener {
     private boolean ttsReady;
     private AudioManager audio;
     private AudioFocusRequest focus;
+    /** Utterances queued and not yet done: focus goes back to the music when this reaches 0. */
+    private int speaking;
+    /** Gives focus back even if the engine never reports an utterance done. */
+    private final Runnable releaseFocus = this::releaseFocus;
     /** Last announced interval slot (activeMs / interval) and whole km. */
     private long voiceSlot;
     private int voiceKm;
@@ -427,12 +431,9 @@ public class Recorder implements HrManager.Listener {
             hr.setSessionLimits(Math.min(pendingHigh, hr.getUserThreshold()), hr.getLowLimit());
         }
         if (idx < plan.steps.size() && s.bpm > 0) {
-            CoachLogic.Step st = plan.steps.get(idx);
-            int lo = Training.zoneFloor(st.zoneLow, session.hrMax);
-            int hi = st.zoneHigh >= 5 ? Integer.MAX_VALUE
-                    : Training.zoneFloor(st.zoneHigh + 1, session.hrMax) - 1;
+            int[] band = CoachLogic.targetBand(plan.steps.get(idx), session.hrMax);
             targetTimedMs += dt;
-            if (s.bpm >= lo && s.bpm <= hi) {
+            if (s.bpm >= band[0] && s.bpm <= band[1]) {
                 inTargetMs += dt;
             }
         }
@@ -579,8 +580,10 @@ public class Recorder implements HrManager.Listener {
                     @Override
                     public void onDone(String id) {
                         main.post(() -> {
-                            if (audio != null && !tts.isSpeaking()) {
-                                audio.abandonAudioFocusRequest(focus);
+                            // Counted rather than tts.isSpeaking(), which can still be true
+                            // here, and then nothing would ever give focus back.
+                            if (--speaking <= 0) {
+                                releaseFocus();
                             }
                             if ("last".equals(id) && state == IDLE) {
                                 stopVoice();
@@ -604,6 +607,12 @@ public class Recorder implements HrManager.Listener {
             tts = null;
             ttsReady = false;
         }
+        releaseFocus();
+    }
+
+    private void releaseFocus() {
+        main.removeCallbacks(releaseFocus);
+        speaking = 0;
         if (audio != null && focus != null) {
             audio.abandonAudioFocusRequest(focus);
         }
@@ -660,6 +669,9 @@ public class Recorder implements HrManager.Listener {
 
     private void speak(String text, String id) {
         audio.requestAudioFocus(focus);
+        speaking++;
+        main.removeCallbacks(releaseFocus);
+        main.postDelayed(releaseFocus, 30000);
         // Queue: an alarm and a scheduled announcement can land in the same second.
         tts.speak(text, TextToSpeech.QUEUE_ADD, null, id);
     }
