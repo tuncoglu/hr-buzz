@@ -85,6 +85,9 @@ public class LiveService extends Service implements HrManager.Listener, Recorder
             recorder.stop();
             hr.stop();
             stopForeground(STOP_FOREGROUND_REMOVE);
+            // After a process kill this instance never went foreground, so it cannot remove the
+            // notification the dead one left behind.
+            notificationManager.cancel(NOTIFICATION_ID);
             stopSelf();
             return START_NOT_STICKY;
         }
