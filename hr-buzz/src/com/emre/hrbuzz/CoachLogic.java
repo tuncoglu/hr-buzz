@@ -312,7 +312,7 @@ public final class CoachLogic {
             }
             st.name = trim(st.name, 30);
             st.cue = trim(st.cue, 120);
-            st.minutes = clamp(st.minutes, 0, 120);
+            st.minutes = clamp(st.minutes, 0, MAX_SESSION_MINUTES);
             st.zoneLow = clamp(st.zoneLow, 1, 5);
             st.zoneHigh = clamp(st.zoneHigh, 1, 5);
             if (st.zoneLow > st.zoneHigh) {
@@ -363,12 +363,12 @@ public final class CoachLogic {
         }
 
         boolean noHistory = lastWeekLoad < 30 && doneThisWeek < 30;
-        int cap = noHistory ? Math.max(15, s.minutes) : Math.max(15, Math.min(180, s.minutes * 2));
+        int cap = sessionCap(s, noHistory);
         if (p.totalMinutes() > cap) {
             scaleTo(p, cap);
             p.adjusted.add(noHistory
                     ? "Kept to your usual " + cap + " min while there are no recent sessions to build on"
-                    : "Shortened to " + cap + " min, twice your usual session");
+                    : "Shortened to " + cap + " min, the longest session the coach plans");
         }
 
         if (p.totalMinutes() != askedMinutes) {
@@ -620,7 +620,7 @@ public final class CoachLogic {
             int d = (int) Math.round(Json.num(set, "daysPerWeek", -1));
             a.daysPerWeek = d >= 1 && d <= 7 ? d : -1;
             int mi = (int) Math.round(Json.num(set, "minutesPerSession", -1));
-            a.minutes = mi >= 10 && mi <= 180 ? mi : -1;
+            a.minutes = mi >= 10 && mi <= MAX_SESSION_MINUTES ? mi : -1;
             String g = Json.str(set, "goal", null);
             a.goal = g == null || g.trim().isEmpty() ? null : trim(g, 60);
         }
@@ -776,7 +776,17 @@ public final class CoachLogic {
         return out;
     }
 
+    /** The longest session the coach plans: 4 hours, for long days and marathon builds. */
+    static final int MAX_SESSION_MINUTES = 240;
     static final int HISTORY_WEEKS = 12;
+
+    /**
+     * Longest session today: the person's usual length while there is nothing recent to
+     * build on, otherwise the 4-hour maximum (no multiple of their setting).
+     */
+    static int sessionCap(Settings s, boolean noHistory) {
+        return noHistory ? Math.max(15, s.minutes) : MAX_SESSION_MINUTES;
+    }
     static final int RECENT_SESSIONS = 40;
     /** Sessions this recent also carry their km splits (heart rate drift, pace by km). */
     static final int SPLIT_DAYS = 28;
@@ -789,7 +799,7 @@ public final class CoachLogic {
                                       ZoneId zone) {
         double[] loads = recentLoads(sessions, now, zone);
         boolean noHistory = loads[1] < 30 && loads[0] < 30;
-        int cap = noHistory ? Math.max(15, s.minutes) : Math.max(15, Math.min(180, s.minutes * 2));
+        int cap = sessionCap(s, noHistory);
         return Json.map("loadDoneLast7Days", (int) Math.round(loads[0]),
                 "maxSessionMinutes", cap,
                 "note", "The app cuts any session above this length, so plan inside it and "

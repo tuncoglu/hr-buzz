@@ -121,7 +121,10 @@ public final class CoachTest {
         eq("zero-minute step dropped", 1, weird.steps.size());
         eq("zones swapped and clamped low", 1, weird.steps.get(0).zoneLow);
         eq("zones swapped and clamped high", 5, weird.steps.get(0).zoneHigh);
-        eq("capped at twice usual time", 70, weird.totalMinutes());
+        eq("a 5 hour plan is capped at 4 hours", 240, weird.totalMinutes());
+        CoachLogic.Plan longDay = CoachLogic.guard(plan(new int[]{180, 2, 2}), s, ready, 1000, 0,
+                SPORTS);
+        eq("a 3 hour easy day is left alone", 180, longDay.totalMinutes());
 
         CoachLogic.Plan empty = CoachLogic.guard(plan(), s, ready, 200, 0, SPORTS);
         ok("no steps -> rest", empty.rest);

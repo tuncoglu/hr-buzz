@@ -56,7 +56,7 @@ An LLM coach built to take as little effort as possible. It talks first, and you
 
 The model proposes; the phone decides. `CoachLogic.guard` checks every plan before it can run:
 
-- It must be a valid shape. Sports and zones are clamped, and a session can be at most twice your usual length.
+- It must be a valid shape. Sports and zones are clamped, and a session can be at most 4 hours (or your usual length while there are no recent sessions to build on).
 - Readiness from your morning fitness tests caps it: resting HR up ≥ 8 bpm or HRV down 25% makes it easy, smaller rises soften the hard parts.
 - There is no weekly volume cap; the coach judges a heavy week by recovery and intensity mix, not a percentage rise.
 - Any mention of chest pain or tightness, arm or jaw pain, fainting, dizziness, palpitations, an irregular heartbeat or unusual breathlessness, in the chat or in a session's notes, never reaches the model. The phone answers "stop and see a doctor" and makes today a rest day (for 48 hours after a note like that).
