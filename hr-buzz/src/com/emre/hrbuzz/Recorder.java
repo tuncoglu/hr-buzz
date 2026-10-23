@@ -275,6 +275,7 @@ public class Recorder implements HrManager.Listener {
         write("-");
         stats.pause();
         anchor = null;
+        walkBreak = false;      // a pause ends a walk break, here and in HrManager
         hr.setSessionRunning(false);
         say("Paused.");
         notifyListeners();

@@ -140,6 +140,7 @@ final class SessionStore {
             o.put("segments", longRows(segments));
             o.put("pauses", longRows(pauses));
             o.put("parts", longRows(parts));
+            o.put("pausesKnown", pausesKnown);
             return o;
         }
 
@@ -193,10 +194,16 @@ final class SessionStore {
             s.targetPct = o.optInt("targetPct", -1);
             s.coachNote = o.optString("coachNote", "");
             s.imported = o.optBoolean("imported");
-            s.pausesKnown = o.has("pauses");
             s.segments = readRows(o.optJSONArray("segments"));
             s.pauses = readRows(o.optJSONArray("pauses"));
             s.parts = readRows(o.optJSONArray("parts"));
+            if (o.has("pausesKnown")) {
+                s.pausesKnown = o.getBoolean("pausesKnown");
+            } else {
+                // Saved before the flag: an older session re-saved before its backfill has
+                // the keys but no moving stretch, which any session with time always has.
+                s.pausesKnown = o.has("pauses") && (s.activeMs == 0 || !s.segments.isEmpty());
+            }
             JSONArray z = o.optJSONArray("zoneMs");
             for (int i = 0; z != null && i < Math.min(6, z.length()); i++) {
                 s.zoneMs[i] = z.getLong(i);
@@ -295,21 +302,40 @@ final class SessionStore {
         return out;
     }
 
+    private static final Object BACKFILL_LOCK = new Object();
+
     /**
      * Sessions saved before breaks were kept get their segments, breaks and best speed from
-     * their samples, once. Reads a file: call off the main thread.
+     * their samples, once: in {@code s}, and in the stored summary when it is still there.
+     * Only those fields are written, onto a fresh read of the file, so edits made since
+     * {@code s} was loaded are kept and a deleted session stays deleted. Without samples
+     * nothing changes. Reads a file: call off the main thread.
      */
     static void backfill(Context c, Summary s) {
         if (s.pausesKnown || s.recording) {
             return;
         }
-        Training.Stats st = replay(s, samples(c, s.id));
+        List<Training.Sample> samples = samples(c, s.id);
+        if (samples.isEmpty()) {
+            return;
+        }
+        Training.Stats st = replay(s, samples);
+        fillBreaks(s, st);
+        synchronized (BACKFILL_LOCK) {
+            Summary fresh = load(c, s.id);
+            if (fresh != null && !fresh.pausesKnown && !fresh.recording) {
+                fillBreaks(fresh, st);
+                save(c, fresh);
+            }
+        }
+    }
+
+    private static void fillBreaks(Summary s, Training.Stats st) {
         s.segments = st.segments();
         s.pauses = new ArrayList<>(st.pauses);
         s.parts = st.parts();
         s.bestSpeed = st.bestSpeed;
         s.pausesKnown = true;
-        save(c, s);
     }
 
     /** Replays the samples through {@link Training.Stats}, exactly as during the recording. */

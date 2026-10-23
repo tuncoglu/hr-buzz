@@ -422,6 +422,9 @@ public final class Training {
         private int lastBpm;
         private long pauseT = -1;
         private int pauseBpm;
+        /** Where the break before the open stretch began, or -1 when there was none. */
+        private long breakFromT = -1;
+        private int breakFromBpm;
 
         private boolean partWalk;
         private long partMs;
@@ -448,9 +451,17 @@ public final class Training {
         public void pause() {
             if (lastT >= 0) {
                 closePart();
+                if (segMs > 0) {
+                    pauseT = lastT;
+                    pauseBpm = lastBpm;
+                } else if (breakFromT >= 0) {
+                    // A single sample is no moving stretch: the break before it carries on,
+                    // so breaks and stretches stay one to one.
+                    pauses.remove(pauses.size() - 1);
+                    pauseT = breakFromT;
+                    pauseBpm = breakFromBpm;
+                }
                 closeSegment();
-                pauseT = lastT;
-                pauseBpm = lastBpm;
             }
             lastT = -1;
             winCount = 0;
@@ -518,6 +529,8 @@ public final class Training {
         public void add(Sample s) {
             if (pauseT >= 0) {
                 pauses.add(new long[]{Math.max(0, s.t - pauseT), pauseBpm, Math.max(0, s.bpm)});
+                breakFromT = pauseT;
+                breakFromBpm = pauseBpm;
                 pauseT = -1;
             }
             // Time is the gap since the previous sample, so a segment's first sample adds none.

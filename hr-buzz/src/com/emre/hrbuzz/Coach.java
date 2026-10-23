@@ -248,7 +248,8 @@ public class Coach {
     /**
      * "Harder": the model gets to design it, but the result must really be harder (and not
      * much longer) after the phone's checks; otherwise the main step simply moves up a zone.
-     * The callback's error is set only when neither works (e.g. this week is at its limit).
+     * The callback's error is set only when neither works (e.g. the main step is already
+     * zone 4, or readiness keeps today easy).
      */
     public void harder(CoachLogic.Plan current, Callback<CoachLogic.Plan> cb) {
         inFlight.incrementAndGet();
@@ -285,8 +286,8 @@ public class Coach {
             }
             if (p == null) {
                 savePlan(current);      // planNow may have stored a not-harder plan
-                error = "Can't make today harder: this week is already near its safe limit, "
-                        + "or today is as hard as the plan allows.";
+                error = "Can't make today harder: it is already as hard as the plan allows, "
+                        + "or your resting heart rate says to keep it easy.";
             } else {
                 savePlan(p);
             }
@@ -306,7 +307,7 @@ public class Coach {
             throw new DeepSeek.ApiException(401, "Add your DeepSeek API key in Coach settings");
         }
         CoachLogic.Settings s = settings();
-        List<CoachLogic.SessionInfo> sessions = sessions();
+        List<CoachLogic.SessionInfo> sessions = sessionsWithBreaks();
         CoachLogic.Readiness r = readiness();
         long now = System.currentTimeMillis();
         ZoneId zone = ZoneId.systemDefault();
@@ -363,7 +364,7 @@ public class Coach {
                     throw new DeepSeek.ApiException(401, "Add your DeepSeek API key first");
                 }
                 CoachLogic.Settings s = settings();
-                List<CoachLogic.SessionInfo> sessions = sessions();
+                List<CoachLogic.SessionInfo> sessions = sessionsWithBreaks();
                 CoachLogic.Readiness r = readiness();
                 long now = System.currentTimeMillis();
                 ZoneId zone = ZoneId.systemDefault();
@@ -420,7 +421,7 @@ public class Coach {
                 if (key == null) {
                     throw new DeepSeek.ApiException(401, "No DeepSeek API key");
                 }
-                List<CoachLogic.SessionInfo> sessions = sessions();
+                List<CoachLogic.SessionInfo> sessions = sessionsWithBreaks();
                 List<CoachLogic.SessionInfo> history = new ArrayList<>();
                 CoachLogic.SessionInfo self = null;
                 for (CoachLogic.SessionInfo si : sessions) {
@@ -506,11 +507,26 @@ public class Coach {
         return api.ask(key, body);
     }
 
+    /**
+     * Finished sessions as the coach sees them. Older sessions may lack their breaks: use
+     * {@link #sessionsWithBreaks} where the model reads them.
+     */
     List<CoachLogic.SessionInfo> sessions() {
+        return sessions(false);
+    }
+
+    /** {@link #sessions}, with breaks filled in for older sessions. Reads sample files: worker only. */
+    private List<CoachLogic.SessionInfo> sessionsWithBreaks() {
+        return sessions(true);
+    }
+
+    private List<CoachLogic.SessionInfo> sessions(boolean backfill) {
         List<CoachLogic.SessionInfo> out = new ArrayList<>();
         for (SessionStore.Summary s : SessionStore.list(appContext)) {
             if (!s.recording) {
-                SessionStore.backfill(appContext, s);
+                if (backfill) {
+                    SessionStore.backfill(appContext, s);
+                }
                 out.add(info(s));
             }
         }

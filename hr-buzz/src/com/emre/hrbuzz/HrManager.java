@@ -314,7 +314,7 @@ public class HrManager {
             walkBreak = false;
         }
         lowActive = value && !walkBreak;
-        alarm.setLow(value ? getLowLimit() : 0);
+        alarm.setLow(lowActive ? getLowLimit() : 0);
         if (value && linkLost) {
             startLostWatch();
         }

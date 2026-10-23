@@ -320,7 +320,8 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
 
     private void showCoach() {
         coachCard.removeAllViews();
-        showRecorder();             // its label depends on whether a plan is waiting
+        CoachLogic.Plan waiting = pendingPlan();
+        showRecorder(waiting);      // its label depends on whether a plan is waiting
         Coach coach = Coach.get(this);
         if (!coach.isEnabled()) {
             coachCard.addView(label("COACH"));
@@ -335,8 +336,8 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
 
         LinearLayout head = new LinearLayout(this);
         head.setGravity(Gravity.CENTER_VERTICAL);
-        TextView headLabel = label(pendingPlan() != null ? "TODAY'S PLAN" : "COACH \u00b7 TODAY");
-        if (pendingPlan() != null) {
+        TextView headLabel = label(waiting != null ? "TODAY'S PLAN" : "COACH \u00b7 TODAY");
+        if (waiting != null) {
             headLabel.setTextColor(0xFF34C759);
         }
         head.addView(headLabel, new LinearLayout.LayoutParams(0,
@@ -403,7 +404,7 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
             int[] lim = mainLimits(plan);
             coachCard.addView(gap(Ui.text(this, "Alerts set for you: beep above " + lim[0]
                     + (lim[1] > 0 ? ", below " + lim[1] : ""), 13, 0xFFC8C8CE), 8));
-            if (pendingPlan() != null) {
+            if (waiting != null) {
                 coachCard.addView(gap(Ui.text(this, "Not started yet. Tap the button below to "
                         + "follow it: alerts and spoken steps only run in a planned session.",
                         13, 0xFF34C759), 6));
@@ -918,10 +919,15 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
     }
 
     private void showRecorder() {
+        showRecorder(recorder.isRecording() ? null : pendingPlan());
+    }
+
+    /** @param waiting today's plan, not started yet: {@link #pendingPlan} */
+    private void showRecorder(CoachLogic.Plan waiting) {
         if (recorder.isRecording()) {
             startButton.setText(recorder.getSession().sport + " in progress \u2014 open");
         } else {
-            startButton.setText(pendingPlan() != null ? "Start a free session" : "Start");
+            startButton.setText(waiting != null ? "Start a free session" : "Start");
         }
     }
 

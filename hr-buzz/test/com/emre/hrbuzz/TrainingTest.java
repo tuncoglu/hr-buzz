@@ -127,6 +127,24 @@ public final class TrainingTest {
         eq("bpm as the break started", 150, (int) br.pauses.get(0)[1]);
         eq("bpm as it ended", 118, (int) br.pauses.get(0)[2]);
 
+        // a one-tick resume between pauses is part of the break, not a stretch of its own
+        Training.Stats tap = new Training.Stats(new Training.Profile(190, true, 40, 80));
+        tap.add(sample(0, 120, 0));
+        tap.pause();                                    // one sample, then paused at once
+        for (int i = 10; i <= 70; i++) {
+            tap.add(sample(1000L * i, 150, 3.0 * i));
+        }
+        tap.pause();
+        tap.add(sample(100000, 130, 210));              // resumed for one tick
+        tap.pause();
+        for (int i = 0; i <= 20; i++) {
+            tap.add(sample(1000L * (200 + i), 140, 220 + 3.0 * i));
+        }
+        eq("double tap: two stretches", 2, tap.segments().size());
+        eq("double tap: one break", 1, tap.pauses.size());
+        eq("double tap: break runs from the first pause", 130000, (int) tap.pauses.get(0)[0]);
+        eq("double tap: bpm as the break started", 150, (int) tap.pauses.get(0)[1]);
+
         // walk breaks: recording never stops, the parts are labelled
         Training.Stats wb = new Training.Stats(new Training.Profile(190, true, 40, 80));
         for (int i = 0; i < 120; i++) {

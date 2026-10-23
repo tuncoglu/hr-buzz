@@ -49,7 +49,7 @@ An LLM coach built to take as little effort as possible. It talks first, and you
 
 - **Today's plan on the home screen.** "Easy run, 35 min", one line on why, its steps as zone-coloured bars, and the alerts it will set. **Start this run** sets everything up; **Not today / Shorter / Harder** re-plan in one tap. Rest days say so.
 - **Guided workouts, offline.** Each step sets that step's alert limits for the session (never above your own "alert above" ceiling), chimes, and is spoken aloud, even with voice guidance off. The training screen shows the step, time left, the target band and % in target. The network is never needed mid-run.
-- **Debrief** on the summary right after Finish: two or three lines with one concrete comparison to your history, and what's next. Older sessions get it on request, so browsing costs nothing.
+- **Debrief** on the summary right after Finish: two or three lines with one concrete comparison to your history, and what's next. Older sessions and ones under 5 minutes get it on request, so browsing and false starts cost nothing.
 - **Ask.** Suggestion chips, typing or speech. Answers that change today come back as an updated plan with **Start now** and **Undo**. "I can do 5 days now" updates the settings.
 - **Morning notification** at your chosen time with today's plan and a Start button (a JobScheduler job, so it waits for a network and survives reboots). Sundays open with a one-line recap.
 - **Setup is four taps** (goal, days a week, minutes, anything to work around). It already knows your zones, profile and last 8 weeks.

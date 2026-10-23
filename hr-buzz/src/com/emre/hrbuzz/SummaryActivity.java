@@ -32,6 +32,8 @@ public class SummaryActivity extends Activity {
     static final String EXTRA_ID = "id";
 
     private static final String[] FEELINGS = {"Awful", "Poor", "OK", "Good", "Great"};
+    /** Shorter sessions (false starts, tests) get a debrief only on request: each one costs a call. */
+    private static final long AUTO_DEBRIEF_MS = 5 * 60000L;
 
     private SessionStore.Summary summary;
     private EditText notes;
@@ -257,8 +259,9 @@ public class SummaryActivity extends Activity {
     }
 
     /**
-     * Shows the stored debrief; for a session that just finished, asks for one by itself,
-     * otherwise offers a button (so opening an old session never spends a request).
+     * Shows the stored debrief; for a session of 5 minutes or more that just finished, asks for
+     * one by itself, otherwise offers a button (so opening an old session or a false start
+     * never spends a request).
      */
     private void fillCoach() {
         coachBox.removeAllViews();
@@ -298,7 +301,7 @@ public class SummaryActivity extends Activity {
         }
         boolean fresh = System.currentTimeMillis() - Math.max(summary.end, summary.id)
                 < 3 * 3600 * 1000L;
-        if (fresh && debriefError == null) {
+        if (fresh && debriefError == null && summary.activeMs >= AUTO_DEBRIEF_MS) {
             debrief();
             return;
         }
