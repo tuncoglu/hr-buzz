@@ -348,6 +348,8 @@ public final class CoachTest {
         ok("limits in brief", lim.get("maxSessionMinutes") != null && lim.get("loadLeft") != null);
         Map<String, Object> r0 = Json.obj(recent.get(0));
         eq("km rounded", 5.14, r0.get("km"));
+        ok("pace beside km", r0.get("paceMinPerKm") != null);
+        ok("weeks carry zone minutes", Json.obj(Json.list(b.get("last12Weeks")).get(0)).get("minutesInZones1to5") != null);
         eq("felt word", "good", r0.get("felt"));
         eq("zones minutes", Arrays.asList(0.0, 0.0, 20.0, 15.0, 0.0), r0.get("minutesInZones1to5"));
         eq("week 0 load", 120.0, Json.obj(Json.list(b.get("last12Weeks")).get(0)).get("load"));
