@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="live_bpm" type="id" />
+    <item name="ready_status" type="id" />
+    <item name="steps_today" type="id" />
+</resources>

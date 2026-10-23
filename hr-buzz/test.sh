@@ -18,14 +18,17 @@ javac -d build/test-classes \
     src/com/emre/hrbuzz/DeepSeek.java \
     src/com/emre/hrbuzz/Import.java \
     src/com/emre/hrbuzz/Move.java \
+    wear/src/com/emre/hrbuzz/WearLogic.java \
     test/com/emre/hrbuzz/HrLogicTest.java \
     test/com/emre/hrbuzz/TrainingTest.java \
     test/com/emre/hrbuzz/CoachTest.java \
     test/com/emre/hrbuzz/ImportTest.java \
-    test/com/emre/hrbuzz/MoveTest.java
+    test/com/emre/hrbuzz/MoveTest.java \
+    test/com/emre/hrbuzz/WearLogicTest.java
 
 java -cp build/test-classes com.emre.hrbuzz.HrLogicTest
 java -cp build/test-classes com.emre.hrbuzz.TrainingTest
 java -cp build/test-classes com.emre.hrbuzz.CoachTest
 java -cp build/test-classes com.emre.hrbuzz.ImportTest
 java -cp build/test-classes com.emre.hrbuzz.MoveTest
+java -cp build/test-classes com.emre.hrbuzz.WearLogicTest
