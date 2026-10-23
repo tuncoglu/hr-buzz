@@ -224,7 +224,7 @@ public class WearSummaryActivity extends Activity {
     private Button choice(String label, boolean selected, Runnable pick) {
         Button b = Wu.button(this, label, selected ? Wu.TARGET_BG : Wu.CARD,
                 selected ? Wu.TARGET_TEXT : Wu.TEXT, 44);
-        b.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 17 * Wu.unit(this));
+        b.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, Wu.textPx(this, 17));
         b.setSelected(selected);
         b.setOnClickListener(v -> pick.run());
         return b;
@@ -312,7 +312,9 @@ public class WearSummaryActivity extends Activity {
         debriefing = true;
         debriefError = null;
         rebuild();
+        WorkService.hold(this);
         Coach.get(this).debrief(summary, (d, err) -> {
+            WorkService.release(this);
             debriefing = false;
             debriefError = err;
             if (d != null) {

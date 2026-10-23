@@ -41,8 +41,8 @@ public class WearCoachActivity extends Activity {
     private boolean editing;
     private String error;
     private CoachLogic.Plan previous;
-    /** The coach's message is cut to two sentences until "More" is tapped. */
-    private boolean messageOpen;
+    /** The coach's message, the step list and notes stay folded away until Details is tapped. */
+    private boolean detailsOpen;
 
     // setup form
     private EditText keyInput;
@@ -161,14 +161,18 @@ public class WearCoachActivity extends Activity {
                     + "for today yet."));
             p.addView(b);
         } else if (plan.rest) {
-            p.addView(Wu.text(this, "Rest day", 24, Wu.TEXT, true));
-            p.addView(Wu.space(this, 6));
-            message(p, plan.message, 16);
-            p.addView(Wu.space(this, 12));
-            Button b = Wu.button(this, "I want to train", Wu.BUTTON, Wu.TEXT, 52);
+            p.addView(Wu.text(this, "Rest day", 28, Wu.TEXT, true));
+            p.addView(Wu.space(this, 10));
+            Button b = Wu.button(this, "I want to train", Wu.ZONE[2], Wu.ON_ACCENT, 60);
             b.setOnClickListener(v -> refreshPlan("They want to train today after all; "
                     + "plan something suitable."));
             p.addView(b);
+            p.addView(Wu.space(this, 8));
+            detailsToggle(p);
+            if (detailsOpen) {
+                p.addView(Wu.space(this, 8));
+                p.addView(Wu.text(this, plan.message, 16, Wu.MUTED, false));
+            }
         } else {
             planCard(p, plan);
         }
@@ -193,24 +197,16 @@ public class WearCoachActivity extends Activity {
     }
 
     private void planCard(LinearLayout p, CoachLogic.Plan plan) {
-        p.addView(Wu.text(this, plan.title, 22, Wu.TEXT, true));
-        p.addView(Wu.text(this, plan.totalMinutes() + " min", 17, Wu.MUTED, true));
-        p.addView(Wu.space(this, 8));
-        message(p, plan.message, 15);
-        p.addView(Wu.space(this, 12));
+        // The headline: what and how long, big. The rest is a tap away under Details.
+        p.addView(Wu.text(this, plan.title, 26, Wu.TEXT, true));
+        p.addView(Wu.text(this, summaryLine(plan), 20, Wu.TARGET_TEXT, true));
+        p.addView(Wu.space(this, 10));
         p.addView(stepsBar(plan));
-        for (CoachLogic.Step st : plan.steps) {
+        if (!plan.adjusted.isEmpty()) {
             p.addView(Wu.space(this, 6));
-            String zones = st.zoneLow == st.zoneHigh ? "Z" + st.zoneLow
-                    : "Z" + st.zoneLow + "–" + st.zoneHigh;
-            p.addView(Wu.text(this, st.name + " · " + st.minutes + " min · " + zones,
-                    15, Wu.TEXT, true));
+            p.addView(Wu.text(this, "Adjusted for you \u00b7 see details", 15, Wu.ZONE[4], true));
         }
-        for (String a : plan.adjusted) {
-            p.addView(Wu.space(this, 6));
-            p.addView(Wu.text(this, a, 14, Wu.ZONE[4], false));
-        }
-        p.addView(Wu.space(this, 14));
+        p.addView(Wu.space(this, 12));
 
         Button start = Wu.button(this, coach.todayDone() ? "Start again" : "Start this run",
                 Wu.ZONE[2], Wu.ON_ACCENT, 64);
@@ -219,6 +215,24 @@ public class WearCoachActivity extends Activity {
         if (coach.todayDone()) {
             p.addView(Wu.space(this, 6));
             p.addView(Wu.text(this, "Today's run is done", 15, Wu.TARGET_TEXT, true));
+        }
+        p.addView(Wu.space(this, 8));
+
+        detailsToggle(p);
+        if (detailsOpen) {
+            p.addView(Wu.space(this, 8));
+            p.addView(Wu.text(this, plan.message, 16, Wu.MUTED, false));
+            for (CoachLogic.Step st : plan.steps) {
+                p.addView(Wu.space(this, 8));
+                String zones = st.zoneLow == st.zoneHigh ? "Z" + st.zoneLow
+                        : "Z" + st.zoneLow + "\u2013" + st.zoneHigh;
+                p.addView(Wu.text(this, st.name + " \u00b7 " + st.minutes + " min \u00b7 " + zones,
+                        16, Wu.TEXT, true));
+            }
+            for (String a : plan.adjusted) {
+                p.addView(Wu.space(this, 8));
+                p.addView(Wu.text(this, a, 15, Wu.ZONE[4], false));
+            }
         }
         p.addView(Wu.space(this, 8));
 
@@ -243,7 +257,9 @@ public class WearCoachActivity extends Activity {
         harder.setOnClickListener(v -> {
             previous = CoachLogic.copy(plan);
             error = null;
+            WorkService.hold(this);
             coach.harder(plan, (np, err) -> {
+                WorkService.release(this);
                 error = err;
                 if (err != null) {
                     previous = null;
@@ -255,6 +271,13 @@ public class WearCoachActivity extends Activity {
             build();
         });
         p.addView(harder);
+        p.addView(Wu.space(this, 6));
+        // After changing max heart rate, age or weight, the plan is worth making again.
+        Button again = Wu.button(this, "Plan again", Wu.BUTTON, Wu.TEXT, 48);
+        again.setEnabled(!coach.isPlanning());
+        again.setOnClickListener(v -> refreshPlan("They changed their settings (max heart rate, "
+                + "age or weight); make today's plan again with them."));
+        p.addView(again);
         if (previous != null) {
             p.addView(Wu.space(this, 6));
             Button undo = Wu.button(this, "Undo", Wu.BUTTON, Wu.MUTED, 48);
@@ -268,22 +291,27 @@ public class WearCoachActivity extends Activity {
         }
     }
 
-    /**
-     * The coach's message, cut to its first two sentences with a More button, so the plan
-     * itself is within reach of one scroll on a small screen.
-     */
-    private void message(LinearLayout p, String text, float size) {
-        String shown = messageOpen ? text : WearLogic.firstSentences(text, 2);
-        p.addView(Wu.text(this, shown, size, Wu.MUTED, false));
-        if (!messageOpen && shown.length() < text.length()) {
-            p.addView(Wu.space(this, 6));
-            Button more = Wu.button(this, "More", Wu.CARD, Wu.TEXT, 40);
-            more.setOnClickListener(v -> {
-                messageOpen = true;
-                build();
-            });
-            p.addView(more);
+    /** Shows or folds away the coach's message, the steps and the notes. */
+    private void detailsToggle(LinearLayout p) {
+        Button b = Wu.button(this, detailsOpen ? "Hide details" : "Details", Wu.CARD, Wu.TEXT, 48);
+        b.setOnClickListener(v -> {
+            detailsOpen = !detailsOpen;
+            build();
+        });
+        p.addView(b);
+    }
+
+    /** "30 min \u00b7 zone 2": the length and the zone of the longest step. */
+    private static String summaryLine(CoachLogic.Plan plan) {
+        CoachLogic.Step main = plan.steps.get(0);
+        for (CoachLogic.Step st : plan.steps) {
+            if (st.minutes > main.minutes) {
+                main = st;
+            }
         }
+        String zone = main.zoneLow == main.zoneHigh ? "zone " + main.zoneLow
+                : "zones " + main.zoneLow + "\u2013" + main.zoneHigh;
+        return plan.totalMinutes() + " min \u00b7 " + zone;
     }
 
     /** The plan's steps as coloured bars sized by duration. */
@@ -317,7 +345,9 @@ public class WearCoachActivity extends Activity {
         CoachLogic.Plan current = coach.todayPlan();
         previous = current == null ? null : CoachLogic.copy(current);
         error = null;
+        WorkService.hold(this);
         coach.refreshPlan(reason, (p, err) -> {
+            WorkService.release(this);
             error = err;
             if (!isFinishing()) {
                 build();
@@ -380,7 +410,7 @@ public class WearCoachActivity extends Activity {
     /** One row that shows its value and moves to the next on a tap. */
     private View cycle(String label, String value, Runnable advance) {
         Button b = Wu.button(this, label + ": " + value, Wu.CARD, Wu.TEXT, 52);
-        b.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 17 * Wu.unit(this));
+        b.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, Wu.textPx(this, 17));
         b.setOnClickListener(v -> {
             advance.run();
             b.setText(label + ": " + (label.equals("Goal") ? goal
@@ -441,8 +471,10 @@ public class WearCoachActivity extends Activity {
                     Toast.LENGTH_LONG).show();
         } else if (coach.isEnabled() && !coach.isPlanning()
                 && (changed || coach.todayPlan() == null || !key.isEmpty())) {
+            WorkService.hold(this);
             coach.refreshPlan(changed ? "They just changed their goal or availability."
                     : "They just set up the coach.", (p, err) -> {
+                WorkService.release(this);
                 error = err;
                 if (!isFinishing()) {
                     build();

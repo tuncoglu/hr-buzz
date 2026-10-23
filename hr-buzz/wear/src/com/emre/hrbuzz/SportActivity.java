@@ -26,7 +26,7 @@ public class SportActivity extends Activity {
             String label = sport + (Prefs.usesGps(sport) ? "" : "  ·  no GPS");
             Button b = Wu.button(this, label, selected ? Wu.TARGET_BG : Wu.CARD,
                     selected ? Wu.TARGET_TEXT : Wu.TEXT, 56);
-            b.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 19 * Wu.unit(this));
+            b.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, Wu.textPx(this, 19));
             b.setContentDescription(sport + (selected ? ", selected" : ""));
             b.setOnClickListener(v -> {
                 Prefs.of(this).edit().putString("sport", sport).apply();

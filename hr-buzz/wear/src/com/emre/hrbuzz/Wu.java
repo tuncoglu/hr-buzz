@@ -36,6 +36,17 @@ final class Wu {
     private Wu() {
     }
 
+    /**
+     * Text is drawn larger than the 360 px design frame suggests: this screen is only about 224 dp
+     * wide, where body text at the design's sizes came out near 10 sp. Display numbers (40 and up)
+     * were already big and stay as drawn.
+     */
+    static final float TEXT_SCALE = 1.4f;
+
+    static float textPx(Context c, float designPx) {
+        return designPx * unit(c) * (designPx >= 40 ? 1f : TEXT_SCALE);
+    }
+
     /** One design pixel (of a 360 px frame) in real pixels. */
     static float unit(Context c) {
         return c.getResources().getDisplayMetrics().widthPixels / 360f;
@@ -55,28 +66,31 @@ final class Wu {
     static TextView text(Context c, String s, float sizeDesignPx, int color, boolean bold) {
         TextView t = new TextView(c);
         t.setText(s);
-        t.setTextSize(TypedValue.COMPLEX_UNIT_PX, sizeDesignPx * unit(c));
+        t.setTextSize(TypedValue.COMPLEX_UNIT_PX, textPx(c, sizeDesignPx));
         t.setTextColor(color);
         t.setTypeface(Typeface.create("sans-serif", bold ? Typeface.BOLD : Typeface.NORMAL));
         t.setIncludeFontPadding(false);
         t.setGravity(Gravity.CENTER);
+        // Whole words only: on a screen this narrow, broken words ("be-cause") read badly.
+        t.setHyphenationFrequency(android.text.Layout.HYPHENATION_FREQUENCY_NONE);
+        t.setBreakStrategy(android.text.Layout.BREAK_STRATEGY_BALANCED);
         return t;
     }
 
-    /** A filled, full-height rounded button; at least 44 design px tall for touch. */
+    /** A filled rounded button, at least {@code heightDesignPx} tall, taller when its label wraps. */
     static Button button(Context c, String s, int bg, int fg, float heightDesignPx) {
         Button b = new Button(c);
         b.setText(s);
         b.setAllCaps(false);
-        b.setTextSize(TypedValue.COMPLEX_UNIT_PX, 22 * unit(c));
+        b.setTextSize(TypedValue.COMPLEX_UNIT_PX, textPx(c, 22));
         b.setTextColor(fg);
         b.setTypeface(Typeface.create("sans-serif", Typeface.BOLD));
         b.setBackground(pill(bg, c, heightDesignPx / 2));
-        b.setMinHeight(0);
-        b.setMinimumHeight(0);
-        b.setPadding(px(c, 12), 0, px(c, 12), 0);
+        b.setMinHeight(px(c, heightDesignPx));
+        b.setMinimumHeight(px(c, heightDesignPx));
+        b.setPadding(px(c, 12), px(c, 6), px(c, 12), px(c, 6));
         b.setLayoutParams(new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, px(c, heightDesignPx)));
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         return b;
     }
 

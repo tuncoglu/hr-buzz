@@ -229,10 +229,8 @@ public class StartActivity extends Activity implements WristHr.Listener {
         int side = Wu.px(this, 62);
 
         page = Wu.column(this);
-        page.setPadding(side, Wu.px(this, 46), side, Wu.px(this, 70));
+        page.setPadding(side, Wu.px(this, 40), side, Wu.px(this, 70));
 
-        page.addView(Wu.text(this, "HR Buzz", 18, Wu.MUTED, true));
-        page.addView(Wu.space(this, 10));
 
         // live heart rate
         LinearLayout live = Wu.row(this);
@@ -245,7 +243,7 @@ public class StartActivity extends Activity implements WristHr.Listener {
         live.addView(unit);
         page.addView(live);
         page.addView(Wu.space(this, 4));
-        TextView ready = Wu.text(this, "", 15, Wu.MUTED, true);
+        TextView ready = Wu.text(this, "", 13, Wu.MUTED, true);
         ready.setId(R.id.ready_status);
         showStatus(ready);
         page.addView(ready);
@@ -257,7 +255,7 @@ public class StartActivity extends Activity implements WristHr.Listener {
             start = null;
         } else {
             start = Wu.button(this, "Start run", Wu.ZONE[2], Wu.ON_ACCENT, 76);
-            start.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 26 * Wu.unit(this));
+            start.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, Wu.textPx(this, 26));
             start.setOnClickListener(v -> begin(false));
             page.addView(start);
             page.addView(Wu.space(this, 8));
@@ -276,7 +274,7 @@ public class StartActivity extends Activity implements WristHr.Listener {
                 : "Coach\n" + (today.rest ? "Rest day"
                         : today.title + " \u00b7 " + today.totalMinutes() + " min");
         Button coachButton = Wu.button(this, coachLabel, Wu.CARD, Wu.TEXT, today == null ? 48 : 68);
-        coachButton.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 17 * Wu.unit(this));
+        coachButton.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, Wu.textPx(this, 15));
         coachButton.setContentDescription(today == null ? "Coach"
                 : "Coach: " + coachLabel.substring(coachLabel.indexOf('\n') + 1));
         coachButton.setOnClickListener(v -> startActivity(new Intent(this, WearCoachActivity.class)));
@@ -461,7 +459,7 @@ public class StartActivity extends Activity implements WristHr.Listener {
     private View toggle(String label, String key, boolean on) {
         Button b = Wu.button(this, label + ": " + (on ? "On" : "Off"),
                 on ? Wu.TARGET_BG : Wu.CARD, on ? Wu.TARGET_TEXT : Wu.TEXT, 52);
-        b.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, 17 * Wu.unit(this));
+        b.setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, Wu.textPx(this, 17));
         b.setOnClickListener(v -> {
             WearPrefs.set(this, key, !on);
             build();

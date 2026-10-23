@@ -196,7 +196,7 @@ public class LiveActivity extends Activity implements WristHr.Listener {
         middle.addView(number);
         unit = Wu.text(this, "bpm", 18, Wu.MUTED, true);
         middle.addView(unit);
-        page.addView(middle, top(96));
+        page.addView(middle, top(80));
 
         pill = Wu.text(this, "", 17, Wu.TEXT, true);
         pill.setPadding(Wu.px(this, 16), Wu.px(this, 6), Wu.px(this, 16), Wu.px(this, 6));
