@@ -34,6 +34,7 @@ public class TrainingActivity extends Activity implements Recorder.Listener, HrM
     private ZoneStripView strip;
     private Ui.Tile[] tiles;
     private Button pauseButton;
+    private Button walkButton;
     private Button finishButton;
     private TextView hint;
     private boolean gps;
@@ -125,6 +126,15 @@ public class TrainingActivity extends Activity implements Recorder.Listener, HrM
 
         root.addView(new View(this), new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1));
+
+        walkButton = new Button(this, null, 0, R.style.SecondaryButton);
+        walkButton.setText("Walk break");
+        walkButton.setAllCaps(false);
+        walkButton.setOnClickListener(v -> recorder.toggleWalkBreak());
+        LinearLayout.LayoutParams wl = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 56));
+        wl.bottomMargin = Ui.dp(this, 10);
+        root.addView(walkButton, wl);
 
         LinearLayout buttons = new LinearLayout(this);
         pauseButton = new Button(this, null, 0, R.style.SecondaryButton);
@@ -312,7 +322,13 @@ public class TrainingActivity extends Activity implements Recorder.Listener, HrM
         Training.Stats st = recorder.getStats();
         boolean paused = recorder.getState() == Recorder.PAUSED;
 
-        sportView.setText(paused ? s.sport + " \u00b7 paused" : s.sport);
+        boolean walking = recorder.isWalkBreak();
+        sportView.setText(paused ? s.sport + " \u00b7 paused"
+                : walking ? s.sport + " \u00b7 walk break" : s.sport);
+        // Only for running, and not while paused: a walk break keeps recording.
+        walkButton.setVisibility("Running".equals(s.sport) ? View.VISIBLE : View.GONE);
+        walkButton.setEnabled(!paused);
+        walkButton.setText(walking ? "Back to running" : "Walk break");
         StringBuilder top = new StringBuilder(recorder.gpsStatus());
         int battery = hr.getBattery();
         if (battery >= 0 && battery <= 20) {
@@ -336,7 +352,9 @@ public class TrainingActivity extends Activity implements Recorder.Listener, HrM
         }
         strip.set(bpm, s.hrMax);
 
-        if (over) {
+        if (walking && !over) {
+            statusView.setText("Walk break \u2014 still recording, low alert off");
+        } else if (over) {
             statusView.setText("Over " + hr.getThreshold() + " \u2014 ease off");
         } else if (under) {
             statusView.setText("Under " + hr.getLowLimit() + " \u2014 pick it up");

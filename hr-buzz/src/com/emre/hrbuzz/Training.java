@@ -295,6 +295,8 @@ public final class Training {
         public double alt = Double.NaN;
         public double dist;
         public int[] rr = new int[0];
+        /** Recorded during a walk break: heart rate and GPS carry on, the part is labelled. */
+        public boolean walk;
 
         public boolean hasFix() {
             return !Double.isNaN(lat) && !Double.isNaN(lon);
@@ -317,6 +319,9 @@ public final class Training {
                     sb.append(';');
                 }
                 sb.append(rr[i]);
+            }
+            if (walk) {
+                sb.append(",w");
             }
             return sb.toString();
         }
@@ -342,6 +347,7 @@ public final class Training {
                         s.rr[i] = Integer.parseInt(parts[i]);
                     }
                 }
+                s.walk = f.length > 7 && f[7].equals("w");
                 return s;
             } catch (NumberFormatException e) {
                 return null;
@@ -388,6 +394,8 @@ public final class Training {
         public double bestSpeed;
         /** Breaks (pauses) in order: {gap ms, bpm just before, bpm just after}. */
         public final List<long[]> pauses = new ArrayList<>();
+        /** Closed parts, see {@link #parts()}. */
+        private final List<long[]> closedParts = new ArrayList<>();
         /** Per completed km: {seconds, average bpm}. */
         public final List<int[]> splits = new ArrayList<>();
         /** Highest average over 10 consecutive heart rate samples (~10 s): a real peak, not a spike. */
@@ -415,6 +423,14 @@ public final class Training {
         private long pauseT = -1;
         private int pauseBpm;
 
+        private boolean partWalk;
+        private long partMs;
+        private double partDist;
+        private long partHrMs;
+        private double partHrWeighted;
+        private int partMax;
+        private int partStartBpm;
+
         private final long[] winT = new long[WINDOW];
         private final double[] winD = new double[WINDOW];
         private int winCount;
@@ -431,6 +447,7 @@ public final class Training {
         /** Forget the previous sample so the next one starts a new segment (after a pause). */
         public void pause() {
             if (lastT >= 0) {
+                closePart();
                 closeSegment();
                 pauseT = lastT;
                 pauseBpm = lastBpm;
@@ -440,6 +457,41 @@ public final class Training {
             lastMoveT = -1;
             peakCount = 0;
             peakSum = 0;
+        }
+
+        private void closePart() {
+            if (partMs > 0) {
+                closedParts.add(partRow());
+            }
+            partMs = 0;
+            partDist = 0;
+            partHrMs = 0;
+            partHrWeighted = 0;
+            partMax = 0;
+        }
+
+        private long[] partRow() {
+            return new long[]{partWalk ? 1 : 0, partMs,
+                    partHrMs > 0 ? Math.round(partHrWeighted / partHrMs) : 0, partMax,
+                    Math.round(partDist), partStartBpm, lastBpm};
+        }
+
+        /**
+         * The session cut at every walk break: {1 for a walk break else 0, ms, average bpm,
+         * max bpm, metres, bpm at the start, bpm at the end}, in order. Empty when there was
+         * no walk break, so a plain session carries nothing extra.
+         */
+        public List<long[]> parts() {
+            List<long[]> all = new ArrayList<>(closedParts);
+            if (partMs > 0) {
+                all.add(partRow());
+            }
+            for (long[] r : all) {
+                if (r[0] == 1) {
+                    return all;
+                }
+            }
+            return new ArrayList<>();
         }
 
         private void closeSegment() {
@@ -474,6 +526,22 @@ public final class Training {
             lastT = s.t;
             lastDist = s.dist;
 
+            if (s.walk != partWalk) {
+                closePart();
+                partWalk = s.walk;
+            }
+            if (partMs == 0 && partHrMs == 0) {
+                // Carrying on from the previous part: it starts where that one left off.
+                // The first sample of a session or after a pause has nothing to carry on from.
+                partStartBpm = dt > 0 && lastBpm > 0 ? lastBpm : s.bpm;
+            }
+            partMs += dt;
+            partDist += dd;
+            if (s.bpm > 0) {
+                partHrMs += dt;
+                partHrWeighted += (double) s.bpm * dt;
+                partMax = Math.max(partMax, s.bpm);
+            }
             activeMs += dt;
             double before = distanceM;
             distanceM += dd;

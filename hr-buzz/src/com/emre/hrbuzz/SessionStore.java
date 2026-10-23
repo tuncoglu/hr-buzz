@@ -57,6 +57,8 @@ final class SessionStore {
         List<long[]> segments = new ArrayList<>();
         /** Breaks: {gap ms, bpm before, bpm after}. */
         List<long[]> pauses = new ArrayList<>();
+        /** Cut at every walk break: {1 if a walk break, ms, avg bpm, max bpm, metres, bpm at start, bpm at end}. */
+        List<long[]> parts = new ArrayList<>();
         /** False for sessions saved before breaks were kept: filled in from their samples. */
         boolean pausesKnown;
         // profile at the time, so a rebuild gives the same numbers after a settings change
@@ -93,7 +95,21 @@ final class SessionStore {
             splits = new ArrayList<>(s.splits);
             segments = s.segments();
             pauses = new ArrayList<>(s.pauses);
+            parts = s.parts();
             pausesKnown = true;
+        }
+
+        /** Minutes and metres spent in walk breaks, {ms, m}. */
+        long[] walkTotals() {
+            long ms = 0;
+            long m = 0;
+            for (long[] p : parts) {
+                if (p[0] == 1) {
+                    ms += p[1];
+                    m += p[4];
+                }
+            }
+            return new long[]{ms, m};
         }
 
         double avgSpeed() {
@@ -123,6 +139,7 @@ final class SessionStore {
             o.put("splits", sp);
             o.put("segments", longRows(segments));
             o.put("pauses", longRows(pauses));
+            o.put("parts", longRows(parts));
             return o;
         }
 
@@ -179,6 +196,7 @@ final class SessionStore {
             s.pausesKnown = o.has("pauses");
             s.segments = readRows(o.optJSONArray("segments"));
             s.pauses = readRows(o.optJSONArray("pauses"));
+            s.parts = readRows(o.optJSONArray("parts"));
             JSONArray z = o.optJSONArray("zoneMs");
             for (int i = 0; z != null && i < Math.min(6, z.length()); i++) {
                 s.zoneMs[i] = z.getLong(i);
@@ -288,6 +306,7 @@ final class SessionStore {
         Training.Stats st = replay(s, samples(c, s.id));
         s.segments = st.segments();
         s.pauses = new ArrayList<>(st.pauses);
+        s.parts = st.parts();
         s.bestSpeed = st.bestSpeed;
         s.pausesKnown = true;
         save(c, s);

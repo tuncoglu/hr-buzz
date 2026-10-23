@@ -126,6 +126,29 @@ public final class TrainingTest {
         eq("break gap ms", 240000, (int) br.pauses.get(0)[0]);
         eq("bpm as the break started", 150, (int) br.pauses.get(0)[1]);
         eq("bpm as it ended", 118, (int) br.pauses.get(0)[2]);
+
+        // walk breaks: recording never stops, the parts are labelled
+        Training.Stats wb = new Training.Stats(new Training.Profile(190, true, 40, 80));
+        for (int i = 0; i < 120; i++) {
+            boolean onBreak = i >= 60 && i < 90;
+            Training.Sample x = sample(1000L * i, onBreak ? 130 : 160, (onBreak ? 1.4 : 3.0) * i);
+            x.walk = onBreak;
+            wb.add(x);
+        }
+        List<long[]> parts = wb.parts();
+        eq("three parts", 3, parts.size());
+        eq("first part is main", 0, (int) parts.get(0)[0]);
+        eq("second part is the walk break", 1, (int) parts.get(1)[0]);
+        eq("break avg bpm", 130, (int) parts.get(1)[2]);
+        eq("bpm at the break's start is the effort's", 160, (int) parts.get(1)[5]);
+        eq("break ends at its own bpm", 130, (int) parts.get(1)[6]);
+        ok("distance and time carry on through the break", wb.activeMs >= 118000
+                && wb.distanceM > 0);
+        eq("a session without a walk break has no parts", 0, br.parts().size());
+        Training.Sample rt = Training.Sample.parse(wb.parts().isEmpty() ? "" : sampleLine(true));
+        ok("walk flag round-trips through the csv", rt != null && rt.walk);
+        Training.Sample plain = Training.Sample.parse(sampleLine(false));
+        ok("old rows read as not walking", plain != null && !plain.walk);
     }
 
     private static void splitsAndPause() {
@@ -297,6 +320,12 @@ public final class TrainingTest {
         s.bpm = bpm;
         s.dist = dist;
         return s;
+    }
+
+    private static String sampleLine(boolean walk) {
+        Training.Sample x = sample(5000, 120, 10);
+        x.walk = walk;
+        return x.toCsv();
     }
 
     private static int count(String haystack, String needle) {

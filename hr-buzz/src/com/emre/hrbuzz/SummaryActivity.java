@@ -126,6 +126,17 @@ public class SummaryActivity extends Activity {
             t[5].set(s.avgHr > 0 ? Training.percentOfMax(s.avgHr, s.hrMax) + "%" : "--");
         }
 
+        long[] walked = s.walkTotals();
+        if (walked[0] > 0) {
+            int breaks = 0;
+            for (long[] part : s.parts) {
+                breaks += part[0] == 1 ? 1 : 0;
+            }
+            card.addView(Ui.text(this, breaks + " walk break" + (breaks == 1 ? "" : "s") + " \u00b7 "
+                    + Training.duration(walked[0]) + " \u00b7 "
+                    + Training.km(walked[1]) + " km, included above", 14, Ui.TEXT2));
+        }
+
         // ---- the coach's debrief
         if (!s.coachNote.isEmpty() || Coach.get(this).isEnabled()) {
             coachBox = card(root);

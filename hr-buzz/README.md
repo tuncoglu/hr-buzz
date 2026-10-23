@@ -15,6 +15,7 @@ What Beat 3.5.13 does, and where it is here:
 | Sport picker + Start | Running, Walking, Cycling, Hiking (GPS) and Gym, Other (no GPS) |
 | Live HR, zone, duration, distance, pace, calories | Training screen: HR in zone colour with % of HRmax, zone pointer, duration, distance, current and average pace, calories, average HR |
 | Voice guidance | Every km, or every 1 / 5 / 10 min: time, distance, pace, HR and zone. Ducks music |
+| Walk break (running) | a button on the training screen: heart rate and GPS keep recording, the part is labelled for the coach, the low alert is off until you tap Back to running |
 | Secure pause button | "Hold to pause or finish" (on by default) |
 | Session summary: duration, HR avg/max, calories, distance, pace avg/max | Same, plus training load |
 | HR and pace graphs, map | HR graph over zone bands, pace graph, route drawn to scale and coloured by zone (no map tiles: that would need the network) |
@@ -57,7 +58,7 @@ The model proposes; the phone decides. `CoachLogic.guard` checks every plan befo
 
 - It must be a valid shape. Sports and zones are clamped, and a session can be at most twice your usual length.
 - Readiness from your morning fitness tests caps it: resting HR up ≥ 8 bpm or HRV down 25% makes it easy, smaller rises soften the hard parts.
-- This week's load can't exceed last week's + 10%.
+- There is no weekly volume cap; the coach judges a heavy week by recovery and intensity mix, not a percentage rise.
 - Any mention of chest pain or tightness, arm or jaw pain, fainting, dizziness, palpitations, an irregular heartbeat or unusual breathlessness, in the chat or in a session's notes, never reaches the model. The phone answers "stop and see a doctor" and makes today a rest day (for 48 hours after a note like that).
 - Step limits allow 5 bpm over the top of the zone. Zone-1-only steps (walks, cool-downs) keep only your own limit, and when a step lowers the limit you get 90 s to come down before it beeps.
 

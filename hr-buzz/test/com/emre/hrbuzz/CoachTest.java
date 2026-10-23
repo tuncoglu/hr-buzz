@@ -140,16 +140,12 @@ public final class CoachTest {
                 SPORTS);
         eq("slightly tired: capped at zone 3", 3, softened.steps.get(0).zoneHigh);
 
-        // last week 100, already 90 done: room 20 at most -> 110 allowed
-        CoachLogic.Plan ramp = CoachLogic.guard(plan(new int[]{40, 3, 3}), s, ready, 100, 90,
+        // no weekly volume cap: a busy week does not shorten or soften the day
+        CoachLogic.Plan busy = CoachLogic.guard(plan(new int[]{45, 3, 3}), s, ready, 100, 593,
                 SPORTS);
-        ok("ramp: little room -> short", ramp.totalMinutes() <= 20);
-        ok("ramp: little room -> easy", ramp.steps.get(0).zoneHigh <= 2);
-
-        CoachLogic.Plan ramp2 = CoachLogic.guard(plan(new int[]{60, 2, 2}), s, ready, 200, 100,
-                SPORTS);
-        ok("ramp: scaled proportionally", 100 + CoachLogic.load(ramp2.steps) <= 220 + 2);
-        ok("ramp: proportional keeps zone", ramp2.steps.get(0).zoneHigh == 2);
+        eq("busy week: session kept", 45, busy.totalMinutes());
+        eq("busy week: zone kept", 3, busy.steps.get(0).zoneHigh);
+        ok("busy week: nothing adjusted", busy.adjusted.isEmpty());
 
         CoachLogic.Plan beginner = CoachLogic.guard(plan(new int[]{35, 2, 2}), s, ready, 0, 0,
                 SPORTS);
@@ -345,10 +341,11 @@ public final class CoachTest {
         List<Object> recent = Json.list(b.get("recentSessions"));
         eq("older than 12 weeks dropped", 1, recent.size());
         Map<String, Object> lim = Json.obj(b.get("limits"));
-        ok("limits in brief", lim.get("maxSessionMinutes") != null && lim.get("loadLeft") != null);
+        ok("limits in brief", lim.get("maxSessionMinutes") != null && lim.get("loadLeft") == null);
         Map<String, Object> r0 = Json.obj(recent.get(0));
         eq("km rounded", 5.14, r0.get("km"));
         ok("pace beside km", r0.get("paceMinPerKm") != null);
+        ok("no parts without walk breaks", r0.get("parts") == null);
         ok("weeks carry zone minutes", Json.obj(Json.list(b.get("last12Weeks")).get(0)).get("minutesInZones1to5") != null);
         eq("felt word", "good", r0.get("felt"));
         eq("zones minutes", Arrays.asList(0.0, 0.0, 20.0, 15.0, 0.0), r0.get("minutesInZones1to5"));

@@ -136,6 +136,7 @@ public class HrManager {
     private int battery = -1;
     private boolean contact = true;
     private boolean alarmOn;
+    private boolean walkBreak;
     private String deviceName;
     private boolean lowActive;
     private int overrideHigh;
@@ -293,13 +294,26 @@ public class HrManager {
     }
 
     /**
+     * A walk break lets heart rate fall on purpose, so the lower limit is off until it ends
+     * (and then waits to be reached again, like at the start).
+     */
+    public void setWalkBreak(boolean value) {
+        walkBreak = value;
+        lowActive = sessionRunning && !value;
+        alarm.setLow(lowActive ? getLowLimit() : 0);
+    }
+
+    /**
      * Set by the recorder while a session is running (not paused). The lower limit only makes
      * sense mid-workout, a lost signal alerts until it is back, and the CPU is kept awake so
      * the timers behind both keep running with the screen off.
      */
     public void setSessionRunning(boolean value) {
         sessionRunning = value;
-        lowActive = value;
+        if (!value) {
+            walkBreak = false;
+        }
+        lowActive = value && !walkBreak;
         alarm.setLow(value ? getLowLimit() : 0);
         if (value && linkLost) {
             startLostWatch();

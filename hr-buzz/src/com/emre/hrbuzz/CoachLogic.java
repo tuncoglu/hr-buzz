@@ -98,6 +98,8 @@ public final class CoachLogic {
         public List<long[]> pauses = new ArrayList<>();
         /** Km splits: {seconds, average bpm}. */
         public List<int[]> splits = new ArrayList<>();
+        /** Cut at walk breaks: {1 if a walk break, ms, avg bpm, max bpm, metres, bpm start, bpm end}. */
+        public List<long[]> parts = new ArrayList<>();
     }
 
     public static final class Test {
@@ -290,7 +292,8 @@ public final class CoachLogic {
 
     /**
      * Makes a model-proposed plan safe to run: sane shapes, within the person's time, capped
-     * by readiness, and adding no more than 10% to last week's training load.
+     * by readiness. There is no weekly volume cap: someone who walks and jogs 12-15 km a day
+     * on purpose is not held to a percentage of last week.
      *
      * @param lastWeekLoad training load (TRIMP) of the 7 days before the last 7
      * @param doneThisWeek training load already done in the last 7 days, today included
@@ -368,23 +371,6 @@ public final class CoachLogic {
                     : "Shortened to " + cap + " min, twice your usual session");
         }
 
-        // Weekly ramp: no more than +10% on last week (or a gentle start with no history).
-        double allowed = weeklyLoadAllowed(s, lastWeekLoad);
-        double planned = load(p.steps);
-        if (doneThisWeek + planned > allowed) {
-            double room = Math.max(0, allowed - doneThisWeek);
-            int fits = (int) (p.totalMinutes() * room / planned);
-            if (fits >= 15) {
-                scaleTo(p, fits);
-                p.adjusted.add("Trimmed so this week stays within 10% of last week's load");
-            } else {
-                // Hardly any room left: an easy recovery session instead of the planned one.
-                capZones(p, 2);
-                scaleTo(p, Math.min(p.totalMinutes(), 20));
-                p.adjusted.add("Made a short easy session: this week's load is already near "
-                        + "its 10% limit");
-            }
-        }
         if (p.totalMinutes() != askedMinutes) {
             // The model's words were written for the longer session: say what it is now.
             p.message = trim(p.message + " Today is " + p.totalMinutes() + " min after the "
@@ -797,27 +783,18 @@ public final class CoachLogic {
 
     /**
      * What the phone will allow, so the model plans inside it instead of being cut back after:
-     * the same numbers {@link #guard} enforces.
+     * the session length {@link #guard} enforces, plus the load done so far for context.
      */
     static Map<String, Object> limits(Settings s, List<SessionInfo> sessions, long now,
                                       ZoneId zone) {
         double[] loads = recentLoads(sessions, now, zone);
-        double allowed = weeklyLoadAllowed(s, loads[1]);
         boolean noHistory = loads[1] < 30 && loads[0] < 30;
         int cap = noHistory ? Math.max(15, s.minutes) : Math.max(15, Math.min(180, s.minutes * 2));
         return Json.map("loadDoneLast7Days", (int) Math.round(loads[0]),
-                "loadAllowedPer7Days", (int) Math.round(allowed),
-                "loadLeft", (int) Math.round(Math.max(0, allowed - loads[0])),
                 "maxSessionMinutes", cap,
-                "note", "The app cuts any plan that goes past these, so plan inside them and "
+                "note", "The app cuts any session above this length, so plan inside it and "
                         + "make the message and the week outline agree with the minutes you "
-                        + "give today.");
-    }
-
-    /** Weekly load allowed: 10% over last week, or a gentle start when there is no history. */
-    static double weeklyLoadAllowed(Settings s, double lastWeekLoad) {
-        return lastWeekLoad >= 30 ? lastWeekLoad * 1.1
-                : Math.max(60, s.daysPerWeek * s.minutes * 2.0);
+                        + "give today. There is no weekly volume cap.");
     }
 
     /**
@@ -826,6 +803,36 @@ public final class CoachLogic {
      * breaks carry the recovery (bpm as the break started and as it ended).
      */
     static void addBreaks(Map<String, Object> o, SessionInfo si) {
+        if (si.parts != null && !si.parts.isEmpty()) {
+            List<Object> parts = new ArrayList<>();
+            for (long[] p : si.parts) {
+                Map<String, Object> m = Json.map("type", p[0] == 1 ? "walk break" : "main effort",
+                        "minutes", Math.round(p[1] / 600.0) / 100.0);
+                if (p[4] > 0) {
+                    m.put("km", Math.round(p[4] / 10.0) / 100.0);
+                    if (p[1] > 0) {
+                        m.put("paceMinPerKm", Math.round(p[1] / 60000.0 / (p[4] / 1000.0)
+                                * 100) / 100.0);
+                    }
+                }
+                if (p[2] > 0) {
+                    m.put("avgHr", p[2]);
+                    m.put("maxHr", p[3]);
+                }
+                if (p[5] > 0) {
+                    m.put("bpmAtStart", p[5]);
+                }
+                if (p[6] > 0) {
+                    m.put("bpmAtEnd", p[6]);
+                }
+                parts.add(m);
+            }
+            o.put("parts", parts);
+            o.put("partsNote", "The person pressed Walk break: heart rate and GPS were recorded "
+                    + "all the way through, so the session's minutes, distance, pace and zone "
+                    + "minutes include the walk breaks. Judge the main efforts by their own "
+                    + "average heart rate and pace, and the breaks by how far bpm fell.");
+        }
         if (si.pauses == null || si.pauses.isEmpty()) {
             return;
         }
@@ -917,8 +924,10 @@ public final class CoachLogic {
             + "and does not show. "
             + "Training rules: about 80% of weekly time in zones 1-2; at most two hard "
             + "sessions (zone 4-5) a week and never on consecutive days; an easy or rest day "
-            + "after a hard one; raise weekly load by no more than 10%; respect their days per "
-            + "week and minutes per session; build towards their goal gradually; work around "
+            + "after a hard one; do not cap their weekly volume, they may do a lot of easy "
+            + "walking, jogging and running every day on purpose, so judge it by recovery "
+            + "(resting heart rate, HRV, how sessions felt) and by the intensity mix, not by a "
+            + "percentage rise; respect their days per week and minutes per session; build towards their goal gradually; work around "
             + "anything they said to work around. Only plan these sports: Running, Walking, "
             + "Cycling, Hiking, Gym, Other. You are not a doctor and never diagnose. If they "
             + "mention chest pain, fainting, dizziness, palpitations or unusual breathlessness, "

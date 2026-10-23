@@ -74,6 +74,8 @@ public class Recorder implements HrManager.Listener {
     private final CopyOnWriteArrayList<Listener> listeners = new CopyOnWriteArrayList<>();
 
     private int state = IDLE;
+    /** In a walk break: samples are flagged, nothing else about recording changes. */
+    private boolean walkBreak;
     private long lastSavedId = -1;
     private SessionStore.Summary session;
     private Training.Stats stats;
@@ -250,6 +252,7 @@ public class Recorder implements HrManager.Listener {
         }
 
         hr.addListener(this);
+        walkBreak = false;
         hr.setSessionRunning(true);
         if (!hr.isActive()) {
             hr.start();
@@ -277,6 +280,25 @@ public class Recorder implements HrManager.Listener {
         notifyListeners();
     }
 
+    public boolean isWalkBreak() {
+        return walkBreak;
+    }
+
+    /**
+     * Starts or ends a walk break. Unlike a pause, heart rate and GPS keep recording, so the
+     * session's distance, pace and zones stay true and the coach can see the recovery. The
+     * lower alert is off meanwhile.
+     */
+    public void toggleWalkBreak() {
+        if (state != RUNNING) {
+            return;
+        }
+        walkBreak = !walkBreak;
+        hr.setWalkBreak(walkBreak);
+        say(walkBreak ? "Walk break." : "Back to it.");
+        notifyListeners();
+    }
+
     public void resume() {
         if (state != PAUSED) {
             return;
@@ -297,6 +319,7 @@ public class Recorder implements HrManager.Listener {
             return -1;
         }
         state = IDLE;
+        walkBreak = false;
         main.removeCallbacks(tick);
         hr.removeListener(this);
         hr.setSessionRunning(false);
@@ -350,6 +373,7 @@ public class Recorder implements HrManager.Listener {
             }
         }
         s.dist = gpsDistance;
+        s.walk = walkBreak;
         s.rr = new int[pendingRr.size()];
         for (int i = 0; i < s.rr.length; i++) {
             s.rr[i] = pendingRr.get(i);

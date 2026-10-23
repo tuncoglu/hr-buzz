@@ -534,6 +534,7 @@ public class Coach {
         si.segments = s.segments;
         si.pauses = s.pauses;
         si.splits = s.splits;
+        si.parts = s.parts;
         return si;
     }
 
