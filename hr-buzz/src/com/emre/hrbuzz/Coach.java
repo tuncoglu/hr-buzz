@@ -46,9 +46,9 @@ public class Coach {
     /** Chat turns sent with each question. */
     private static final int CHAT_TURNS = 30;
     /** max_tokens covers the model's reasoning as well as its answer. */
-    private static final int PLAN_TOKENS = 12000;
-    private static final int ASK_TOKENS = 8000;
-    private static final int DEBRIEF_TOKENS = 8000;
+    private static final int PLAN_TOKENS = 32000;
+    private static final int ASK_TOKENS = 32000;
+    private static final int DEBRIEF_TOKENS = 32000;
 
     public interface Callback<T> {
         /** Exactly one of {@code result} and {@code error} is non-null. On the main thread. */
