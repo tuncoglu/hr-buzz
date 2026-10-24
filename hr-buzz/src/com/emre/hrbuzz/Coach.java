@@ -798,6 +798,18 @@ public class Coach {
     // --------------------------------------------------------------- schedule
 
     /**
+     * Schedules the morning plan only when no job is waiting. Called whenever the app opens:
+     * the job is otherwise only (re)made by the setup screen and by the job itself, so one
+     * lost job (an update, a force stop) would silence the morning plan for good.
+     */
+    public void scheduleIfMissing() {
+        JobScheduler js = (JobScheduler) appContext.getSystemService(Context.JOB_SCHEDULER_SERVICE);
+        if (js != null && js.getPendingJob(JOB_MORNING) == null) {
+            schedule();
+        }
+    }
+
+    /**
      * Schedules the morning plan: a job that waits until the chosen time and for a network,
      * then plans the day and posts it as a notification. Survives reboots.
      */

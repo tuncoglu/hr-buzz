@@ -61,6 +61,7 @@ public class StartActivity extends Activity implements WristHr.Listener {
             startActivity(new Intent(this, LiveActivity.class));
         }
         hr.addListener(this);
+        Coach.get(this).scheduleIfMissing();
         if (hasHeartPermission()) {
             hr.start();
         }

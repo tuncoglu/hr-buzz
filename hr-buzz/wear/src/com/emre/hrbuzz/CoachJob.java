@@ -27,6 +27,7 @@ public class CoachJob extends JobService {
     public boolean onStartJob(JobParameters params) {
         Coach coach = Coach.get(this);
         if (!coach.isEnabled()) {
+            coach.schedule();       // cancels the job when the coach is off, else renews it
             return false;
         }
         new Thread(() -> {

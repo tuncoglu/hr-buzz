@@ -894,6 +894,7 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
             return;
         }
         int peak = Prefs.hrMaxPending(this);
+        Coach.get(this).scheduleIfMissing();
         if (peak <= 0) {
             return;
         }
