@@ -43,6 +43,7 @@ public final class CoachTest {
         talkEvidence();
         todayStatus();
         promptRules();
+        phase3();
         client();
         if (failures > 0) {
             System.out.println(failures + " check(s) FAILED");
@@ -203,6 +204,126 @@ public final class CoachTest {
         CoachLogic.SessionInfo si = answered(0, 130, 40, 0);
         ok("the debrief is held to a phone screen", CoachLogic.debriefPrompt(b, si, null)
                 .contains("under 120 words in all"));
+    }
+
+    private static CoachLogic.SessionInfo trip(String sport, int daysAgo, double km, int minutes) {
+        CoachLogic.SessionInfo si = new CoachLogic.SessionInfo();
+        si.start = NOW - daysAgo * DAY - 3600000L;
+        si.sport = sport;
+        si.distanceM = km * 1000;
+        si.activeMs = minutes * 60000L;
+        si.avgHr = 110;
+        return si;
+    }
+
+    private static void phase3() throws Exception {
+        // usual pace and the km a plan goes
+        List<CoachLogic.SessionInfo> ss = new ArrayList<>();
+        ss.add(trip("Walking", 1, 12.37, 121));     // 9.78 min/km
+        ss.add(trip("Walking", 5, 4.33, 41));       // 9.47
+        ss.add(trip("Hiking", 7, 3.61, 40));        // 11.08: hiking counts with walking
+        ss.add(trip("Walking", 30, 5, 25));         // too old
+        ss.add(trip("Walking", 2, 0.5, 5));         // under a km: no pace
+        ss.add(trip("Running", 3, 5.07, 40));       // 7.89
+        ss.add(trip("Gym", 3, 0, 40));
+        eq("walking pace: the median", 9.78, CoachLogic.usualPace(ss, NOW, "Walking"));
+        eq("hiking uses the same", 9.78, CoachLogic.usualPace(ss, NOW, "Hiking"));
+        eq("running pace is separate", 7.88, CoachLogic.usualPace(ss, NOW, "Running"));
+        eq("no distance sport: none", 0.0, CoachLogic.usualPace(ss, NOW, "Gym"));
+        eq("no history: none", 0.0, CoachLogic.usualPace(new ArrayList<>(), NOW, "Walking"));
+        CoachLogic.Plan walk = CoachLogic.parsePlan(Json.parseObject("{\"today\":{\"title\":\"Long\","
+                + "\"sport\":\"Walking\",\"steps\":[{\"name\":\"a\",\"minutes\":105,\"zoneLow\":1,"
+                + "\"zoneHigh\":2}]}}"), "2026-10-21");
+        eq("105 min at 9.78 is about 10.5 km", 10.5, CoachLogic.estimateKm(walk, ss, NOW));
+        eq("a rest day goes nowhere", 0.0, CoachLogic.estimateKm(
+                CoachLogic.restPlan("2026-10-21", "r"), ss, NOW));
+        eq("without a pace there is no estimate", 0.0,
+                CoachLogic.estimateKm(walk, new ArrayList<>(), NOW));
+        Map<String, Object> b = CoachLogic.brief(settings(), ss, new ArrayList<>(),
+                new CoachLogic.Readiness(), null, NOW, LONDON);
+        eq("the model gets the same pace", 9.78,
+                Json.obj(b.get("usualPaceMinPerKm")).get("walkingOrHiking"));
+
+        // the weekly table
+        CoachLogic.SessionInfo a = trip("Running", 1, 5, 40);
+        a.zoneMs[2] = 10 * 60000L;
+        a.zoneMs[4] = 30 * 60000L;
+        a.trimp = 100;
+        a.splits.add(new int[]{480, 140});
+        a.splits.add(new int[]{470, 140});
+        a.splits.add(new int[]{460, 144});
+        CoachLogic.SessionInfo old = trip("Walking", 9, 4, 40);
+        old.splits.add(new int[]{600, 110});
+        List<CoachLogic.SessionInfo> two = new ArrayList<>();
+        two.add(a);
+        two.add(old);
+        List<CoachLogic.WeekRow> rows = CoachLogic.weekly(two, NOW, LONDON, 4);
+        eq("four weeks", 4, rows.size());
+        eq("this week: one session", 1, rows.get(0).sessions);
+        eq("this week: km", 5.0, rows.get(0).km);
+        eq("this week: easy share", 25, rows.get(0).easyPct);
+        eq("this week: median run pace", 470, rows.get(0).runPace);
+        eq("this week: median run bpm", 140, rows.get(0).runBpm);
+        eq("this week: no walk pace", 0, rows.get(0).walkPace);
+        eq("last week: the walk (9 days ago)", 1, rows.get(1).sessions);
+        eq("last week: its pace", 600, rows.get(1).walkPace);
+        eq("last week: no heart rate time", -1, rows.get(1).easyPct);
+        eq("two weeks ago: nothing", 0, rows.get(2).sessions);
+        ok("metres per heartbeat is worked out", rows.get(0).runMPerBeat > 0.5
+                && rows.get(0).runMPerBeat < 1.5);
+        List<CoachLogic.SessionInfo> drifting = new ArrayList<>();
+        CoachLogic.SessionInfo d = trip("Running", 1, 4, 30);
+        d.splits.add(new int[]{480, 130});
+        d.splits.add(new int[]{480, 132});
+        d.splits.add(new int[]{480, 140});
+        d.splits.add(new int[]{480, 146});
+        drifting.add(d);
+        List<CoachLogic.Drift> dr = CoachLogic.drifts(drifting, NOW, LONDON);
+        eq("one drift row", 1, dr.size());
+        ok("heart rate crept up: positive drift", dr.get(0).pct > 5);
+        eq("fewer than 4 splits: none", 0, CoachLogic.drifts(two, NOW, LONDON).size());
+
+        // suggestions that fit the day
+        CoachLogic.ChipState st = new CoachLogic.ChipState();
+        eq("no plan yet", java.util.Arrays.asList("Plan my day", CoachLogic.IMPROVING),
+                CoachLogic.suggestions(st));
+        st.hasPlan = true;
+        List<String> before = CoachLogic.suggestions(st);
+        eq("before a run: why, shorter, easier, move, sore, and progress", 6, before.size());
+        eq("why first", CoachLogic.WHY_PLAN, before.get(0));
+        st.done = true;
+        ok("after the run: no 20 minutes", !CoachLogic.suggestions(st).contains("I only have 20 minutes"));
+        st.done = false;
+        st.rest = true;
+        eq("rest day: its own why", CoachLogic.WHY_REST, CoachLogic.suggestions(st).get(0));
+        ok("rest day: want to train", CoachLogic.suggestions(st).contains("I want to train"));
+        st.hardWeek = true;
+        ok("a hard week adds a question", CoachLogic.suggestions(st).contains("Am I overdoing it?"));
+        ok("progress is always there", CoachLogic.suggestions(st).contains(CoachLogic.IMPROVING));
+        CoachLogic.SessionInfo hard = trip("Running", 2, 5, 40);
+        hard.zoneMs[2] = 10 * 60000L;
+        hard.zoneMs[4] = 30 * 60000L;
+        List<CoachLogic.SessionInfo> hw = new ArrayList<>();
+        hw.add(hard);
+        eq("a hard week", true, CoachLogic.hardWeek(hw, NOW));
+        hard.zoneMs[4] = 5 * 60000L;
+        hard.zoneMs[2] = 35 * 60000L;
+        eq("an easy week", false, CoachLogic.hardWeek(hw, NOW));
+        eq("too little to judge", false, CoachLogic.hardWeek(new ArrayList<>(), NOW));
+
+        // which chat messages get the slow mode
+        eq("a change of plan", true, CoachLogic.needsThinking("I only have 20 minutes"));
+        eq("sore legs", true, CoachLogic.needsThinking("My legs are sore"));
+        eq("a distance question", true, CoachLogic.needsThinking("Is 110 mins enough for 12 km?"));
+        eq("a plain question", false, CoachLogic.needsThinking("What does zone 3 mean?"));
+        eq("no text", false, CoachLogic.needsThinking(null));
+
+        // the request body in each mode
+        String slow = DeepSeek.body("s", "u", 100);
+        String fast = DeepSeek.body("s", "u", 100, false);
+        ok("default is the reasoning mode", slow.contains("\"enabled\"") && slow.contains("reasoning_effort"));
+        ok("fast mode: reasoning off", fast.contains("\"disabled\"") && !fast.contains("reasoning_effort"));
+        ok("fast mode still asks for JSON", fast.contains("json_object") && fast.contains("\"max_tokens\":100"));
     }
 
     private static void testDue() {

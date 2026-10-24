@@ -56,17 +56,28 @@ public final class DeepSeek {
 
     /** The request body, also what "See the last message sent" shows (the key is never in it). */
     public static String body(String system, String user, int maxTokens) {
+        return body(system, user, maxTokens, true);
+    }
+
+    /**
+     * {@code thinking} false is the fast mode: no reasoning pass, for plain questions. The
+     * answer is the same JSON shape, but arrives in a few seconds rather than twenty.
+     */
+    public static String body(String system, String user, int maxTokens, boolean thinking) {
         List<Object> messages = new ArrayList<>();
         messages.add(Json.map("role", "system", "content", system));
         messages.add(Json.map("role", "user", "content", user));
-        return Json.write(Json.map(
+        Map<String, Object> body = Json.map(
                 "model", MODEL,
                 "messages", messages,
                 "response_format", Json.map("type", "json_object"),
-                "thinking", Json.map("type", "enabled"),
-                "reasoning_effort", "high",
-                "max_tokens", maxTokens,
-                "stream", false));
+                "thinking", Json.map("type", thinking ? "enabled" : "disabled"));
+        if (thinking) {
+            body.put("reasoning_effort", "high");
+        }
+        body.put("max_tokens", maxTokens);
+        body.put("stream", false);
+        return Json.write(body);
     }
 
     /**

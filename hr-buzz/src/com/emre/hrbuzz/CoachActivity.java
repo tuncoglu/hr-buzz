@@ -30,10 +30,8 @@ public class CoachActivity extends Activity {
 
     private static final int REQ_SPEECH = 1;
 
-    private static final String[] SUGGESTIONS = {"Why this plan?", "I only have 20 minutes",
-            "My legs are sore", "Move today to tomorrow", "Am I improving?"};
-
     private Coach coach;
+    private LinearLayout chips;
     private LinearLayout content;
     private ScrollView scroll;
     private EditText input;
@@ -71,14 +69,7 @@ public class CoachActivity extends Activity {
         LinearLayout bottom = new LinearLayout(this);
         bottom.setOrientation(LinearLayout.VERTICAL);
         bottom.setPadding(pad, Ui.dp(this, 6), pad, Ui.dp(this, 14));
-        LinearLayout chips = new LinearLayout(this);
-        for (String sgg : SUGGESTIONS) {
-            TextView c = Ui.chip(this, sgg);
-            c.setTextSize(14);
-            c.setMinHeight(Ui.dp(this, 40));
-            c.setOnClickListener(v -> ask(sgg));
-            chips.addView(c);
-        }
+        chips = new LinearLayout(this);
         HorizontalScrollView hs = new HorizontalScrollView(this);
         hs.setHorizontalScrollBarEnabled(false);
         hs.addView(chips);
@@ -146,6 +137,9 @@ public class CoachActivity extends Activity {
         head.setGravity(Gravity.CENTER_VERTICAL);
         head.addView(Ui.bold(Ui.text(this, "Coach", 26, Ui.TEXT)), new LinearLayout.LayoutParams(0,
                 ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        TextView progress = Ui.chip(this, "Progress");
+        progress.setOnClickListener(v -> startActivity(new Intent(this, ProgressActivity.class)));
+        head.addView(progress);
         TextView settings = Ui.chip(this, "Settings");
         settings.setOnClickListener(v -> startActivity(new Intent(this, CoachSetupActivity.class)));
         head.addView(settings);
@@ -165,8 +159,13 @@ public class CoachActivity extends Activity {
         if (plan != null) {
             section(plan.rest ? "Today" : "Today's plan");
             LinearLayout today = card();
+            double km = plan.rest ? 0 : coach.estimatedKm(plan);
             today.addView(Ui.bold(Ui.text(this, plan.rest ? plan.title
                     : plan.title + " \u00b7 " + plan.totalMinutes() + " min", 19, Ui.TEXT)));
+            if (km > 0) {
+                today.addView(gap(Ui.text(this, "About " + CoachLogic.kmText(km)
+                        + " km at your usual pace", 13, Ui.TEXT2), 2));
+            }
             if (!plan.message.isEmpty()) {
                 today.addView(gap(Ui.text(this, plan.message, 15, 0xFFC8C8CE), 6));
             }
@@ -253,7 +252,42 @@ public class CoachActivity extends Activity {
             content.addView(gap(Ui.text(this, error, 14, 0xFFFF6961), 8));
         }
         send.setEnabled(!busy);
+        renderChips();
         scroll.post(() -> scroll.fullScroll(View.FOCUS_DOWN));
+    }
+
+    /** Suggestions that fit today: before a run, after it, a rest day, a hard week. */
+    private void renderChips() {
+        CoachLogic.Plan plan = coach.todayPlan();
+        CoachLogic.ChipState st = new CoachLogic.ChipState();
+        st.hasPlan = plan != null;
+        st.rest = plan != null && plan.rest;
+        st.done = coach.todayDone();
+        st.hardWeek = CoachLogic.hardWeek(coach.sessions(), System.currentTimeMillis());
+        chips.removeAllViews();
+        for (String text : CoachLogic.suggestions(st)) {
+            TextView c = Ui.chip(this, text);
+            c.setTextSize(14);
+            c.setMinHeight(Ui.dp(this, 40));
+            c.setOnClickListener(v -> onChip(text));
+            chips.addView(c);
+        }
+    }
+
+    /** Two suggestions need no request: the plan's own reasons, and the Progress screen. */
+    private void onChip(String text) {
+        if (busy) {
+            return;
+        }
+        if (CoachLogic.IMPROVING.equals(text)) {
+            startActivity(new Intent(this, ProgressActivity.class));
+        } else if ((CoachLogic.WHY_PLAN.equals(text) || CoachLogic.WHY_REST.equals(text))
+                && coach.explainPlan(text)) {
+            error = null;
+            render();
+        } else {
+            ask(text);
+        }
     }
 
     /** Last 7 days against the 7 before: sessions, minutes, load change, easy share. */

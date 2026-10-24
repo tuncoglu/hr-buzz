@@ -1004,6 +1004,18 @@ public final class CoachLogic {
         if (progress != null) {
             out.put("progress", progress);
         }
+        Map<String, Object> pace = new java.util.LinkedHashMap<>();
+        double runPace = usualPace(sessions, now, "Running");
+        double walkPace = usualPace(sessions, now, "Walking");
+        if (runPace > 0) {
+            pace.put("running", runPace);
+        }
+        if (walkPace > 0) {
+            pace.put("walkingOrHiking", walkPace);
+        }
+        if (!pace.isEmpty()) {
+            out.put("usualPaceMinPerKm", pace);
+        }
         out.put("limits", limits(s, sessions, now, zone));
         out.put("recentSessions", recent);
         List<Object> history = planHistory(x.planDays, sessions, today, zone);
@@ -1174,17 +1186,9 @@ public final class CoachLogic {
             }
         }
         List<Object> drift = new ArrayList<>();
-        for (SessionInfo si : sessions) {
-            if (ago(si, today, zone) >= 28 || si.splits.size() < 4 || drift.size() >= 12) {
-                continue;
-            }
-            int half = si.splits.size() / 2;
-            double first = efficiency(si.splits.subList(0, half));
-            double second = efficiency(si.splits.subList(si.splits.size() - half, si.splits.size()));
-            if (first > 0 && second > 0) {
-                drift.add(Json.map("date", dateOf(si.start, zone), "sport", si.sport,
-                        "decouplingPct", Math.round((first / second - 1) * 1000) / 10.0));
-            }
+        for (Drift d : drifts(sessions, now, zone)) {
+            drift.add(Json.map("date", dateOf(d.start, zone), "sport", d.sport,
+                    "decouplingPct", d.pct));
         }
         if (weekRows.isEmpty()) {
             return null;
@@ -1198,6 +1202,153 @@ public final class CoachLogic {
             out.put("hrDrift", drift);
         }
         return out;
+    }
+
+    /** How much a session's heart rate crept up against its pace (positive: it drifted). */
+    public static final class Drift {
+        public long start;
+        public String sport = "";
+        /** Percent: metres per heartbeat of the first half over the second half, minus one. */
+        public double pct;
+    }
+
+    /** Drift of the sessions of the last 4 weeks that have at least 4 km splits, newest first. */
+    public static List<Drift> drifts(List<SessionInfo> sessions, long now, ZoneId zone) {
+        LocalDate today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate();
+        List<Drift> out = new ArrayList<>();
+        for (SessionInfo si : sessions) {
+            if (ago(si, today, zone) >= 28 || si.splits.size() < 4 || out.size() >= 12) {
+                continue;
+            }
+            int half = si.splits.size() / 2;
+            double first = efficiency(si.splits.subList(0, half));
+            double second = efficiency(si.splits.subList(si.splits.size() - half, si.splits.size()));
+            if (first > 0 && second > 0) {
+                Drift d = new Drift();
+                d.start = si.start;
+                d.sport = si.sport;
+                d.pct = Math.round((first / second - 1) * 1000) / 10.0;
+                out.add(d);
+            }
+        }
+        return out;
+    }
+
+    /** One week of the progress table. {@code weeksAgo} 0 is the last 7 days. */
+    public static final class WeekRow {
+        public int weeksAgo;
+        public int sessions;
+        public long activeMs;
+        public double km;
+        public double load;
+        /** Share of timed heart rate spent in zones 1-2, or -1 with no heart rate. */
+        public int easyPct = -1;
+        /** Median km split pace in seconds, bpm and metres per heartbeat; 0 when unknown. */
+        public int runPace;
+        public int runBpm;
+        public double runMPerBeat;
+        public int walkPace;
+        public int walkBpm;
+        public double walkMPerBeat;
+    }
+
+    /** The last {@code weeks} weeks, newest first, for the Progress screen. */
+    public static List<WeekRow> weekly(List<SessionInfo> sessions, long now, ZoneId zone, int weeks) {
+        LocalDate today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate();
+        List<WeekRow> out = new ArrayList<>();
+        for (int w = 0; w < weeks; w++) {
+            WeekRow row = new WeekRow();
+            row.weeksAgo = w;
+            long easy = 0;
+            long zoned = 0;
+            for (String k : new String[]{"run", "walk"}) {
+                List<Integer> pace = new ArrayList<>();
+                List<Integer> bpm = new ArrayList<>();
+                List<Integer> perBeat = new ArrayList<>();
+                for (SessionInfo si : sessions) {
+                    long a = ago(si, today, zone);
+                    if (a < 7L * w || a >= 7L * (w + 1)) {
+                        continue;
+                    }
+                    if (k.equals("run")) {      // totals once, not per kind
+                        row.sessions++;
+                        row.activeMs += si.activeMs;
+                        row.km += si.distanceM / 1000;
+                        row.load += si.trimp;
+                        easy += si.zoneMs[1] + si.zoneMs[2];
+                        for (int z = 1; z <= 5; z++) {
+                            zoned += si.zoneMs[z];
+                        }
+                    }
+                    if (!kind(si.sport).equals(k)) {
+                        continue;
+                    }
+                    for (int[] sp : si.splits) {
+                        if (sp[0] <= 0) {
+                            continue;
+                        }
+                        pace.add(sp[0]);
+                        if (sp[1] > 0) {
+                            bpm.add(sp[1]);
+                            perBeat.add((int) Math.round(100000.0 / (sp[0] * sp[1] / 60.0)));
+                        }
+                    }
+                }
+                if (pace.isEmpty()) {
+                    continue;
+                }
+                int p = medianOf(pace);
+                int b = bpm.isEmpty() ? 0 : medianOf(bpm);
+                double m = perBeat.isEmpty() ? 0 : medianOf(perBeat) / 100.0;
+                if (k.equals("run")) {
+                    row.runPace = p;
+                    row.runBpm = b;
+                    row.runMPerBeat = m;
+                } else {
+                    row.walkPace = p;
+                    row.walkBpm = b;
+                    row.walkMPerBeat = m;
+                }
+            }
+            row.easyPct = zoned > 0 ? (int) Math.round(easy * 100.0 / zoned) : -1;
+            out.add(row);
+        }
+        return out;
+    }
+
+    /** Days of sessions the usual pace is taken from. */
+    static final int PACE_DAYS = 21;
+
+    /**
+     * Their usual pace in minutes per km for a sport: the median of their recent sessions of
+     * that kind (walking and hiking count as one, running as another). 0 when there is none
+     * to go on, or for a sport without distance.
+     */
+    public static double usualPace(List<SessionInfo> sessions, long now, String sport) {
+        String k = kind(sport);
+        if (k.isEmpty()) {
+            return 0;
+        }
+        List<Integer> secPerKm = new ArrayList<>();
+        for (SessionInfo si : sessions) {
+            if (kind(si.sport).equals(k) && si.distanceM >= 1000 && si.activeMs > 0
+                    && now - si.start < PACE_DAYS * 86400000L) {
+                secPerKm.add((int) Math.round(si.activeMs / 1000.0 / (si.distanceM / 1000)));
+            }
+        }
+        return secPerKm.isEmpty() ? 0 : Math.round(medianOf(secPerKm) / 60.0 * 100) / 100.0;
+    }
+
+    /**
+     * About how far a plan goes at their usual pace for its sport, rounded to half a km; 0 when
+     * unknown. A rough guide (the walking parts of a run are not told apart), shown as "about".
+     */
+    public static double estimateKm(Plan p, List<SessionInfo> sessions, long now) {
+        if (p == null || p.rest || p.totalMinutes() <= 0) {
+            return 0;
+        }
+        double pace = usualPace(sessions, now, p.sport);
+        return pace <= 0 ? 0 : Math.round(p.totalMinutes() / pace * 2) / 2.0;
     }
 
     /** Metres per heartbeat over km splits; 0 when heart rate is missing. */
@@ -1607,6 +1758,89 @@ public final class CoachLogic {
         return new double[]{thisWeek, lastWeek};
     }
 
+    // ------------------------------------------------------------ chat suggestions
+
+    /** Chips the phone answers by itself, with no request. */
+    public static final String WHY_PLAN = "Why this plan?";
+    public static final String WHY_REST = "Why a rest day?";
+    /** A chip that opens the Progress screen. */
+    public static final String IMPROVING = "Am I improving?";
+
+    /** What the chat suggestions depend on. */
+    public static final class ChipState {
+        public boolean hasPlan;
+        public boolean rest;
+        /** Today's planned session has been recorded. */
+        public boolean done;
+        /** A lot of the last week's heart rate time sat in zones 4-5. */
+        public boolean hardWeek;
+    }
+
+    /** Up to five suggestions that fit the day: before a run, after one, on a rest day. */
+    public static List<String> suggestions(ChipState st) {
+        List<String> out = new ArrayList<>();
+        if (!st.hasPlan) {
+            out.add("Plan my day");
+        } else if (st.rest) {
+            out.add(WHY_REST);
+            out.add("I want to train");
+            out.add("What's tomorrow?");
+        } else if (st.done) {
+            out.add("What's tomorrow?");
+            out.add("I feel tired");
+            out.add("Can I do more today?");
+        } else {
+            out.add(WHY_PLAN);
+            out.add("I only have 20 minutes");
+            out.add("Make it easier");
+            out.add("Move today to tomorrow");
+            out.add("My legs are sore");
+        }
+        if (st.hardWeek && out.size() < 4) {
+            out.add("Am I overdoing it?");
+        }
+        out.add(IMPROVING);
+        return out;
+    }
+
+    /** A distance for the screen: "10.5", or "11" when it is whole. */
+    public static String kmText(double km) {
+        return km == Math.rint(km) ? String.valueOf((long) km)
+                : String.format(Locale.ROOT, "%.1f", km);
+    }
+
+    /** At least this share of a week's timed heart rate in zones 4-5 is a hard week. */
+    static final double HARD_WEEK_SHARE = 0.25;
+
+    /** True when the last 7 days had 30 minutes or more with a quarter of it in zones 4-5. */
+    public static boolean hardWeek(List<SessionInfo> sessions, long now) {
+        long hard = 0;
+        long zoned = 0;
+        for (SessionInfo si : sessions) {
+            if (now - si.start < 7 * 86400000L) {
+                hard += si.zoneMs[4] + si.zoneMs[5];
+                for (int z = 1; z <= 5; z++) {
+                    zoned += si.zoneMs[z];
+                }
+            }
+        }
+        return zoned >= 30 * 60000L && hard >= HARD_WEEK_SHARE * zoned;
+    }
+
+    private static final java.util.regex.Pattern CHANGES_DAY = java.util.regex.Pattern.compile(
+            "\\b(minutes?|mins?|hours?|shorter|longer|harder|easier|easy|hard|move|swap|skip|"
+                    + "rest|tomorrow|today|tonight|km|kilomet\\w*|plan|change|instead|sore|tired|"
+                    + "injur\\w*|pain|ill|sick|busy|travel\\w*)\\b",
+            java.util.regex.Pattern.CASE_INSENSITIVE);
+
+    /**
+     * Whether a chat message may change training and so deserves the model's slow, reasoned
+     * mode. A plain question ("what does zone 3 mean?") is answered fast, with no reasoning.
+     */
+    public static boolean needsThinking(String message) {
+        return message != null && CHANGES_DAY.matcher(message).find();
+    }
+
     /** A resting test older than this is worth asking for again. */
     static final long TEST_DUE_MS = 7 * 86400000L;
 
@@ -1675,6 +1909,9 @@ public final class CoachLogic {
             + "\"stepAlertBpm\" is where a step topping out in each zone really beeps: when you "
             + "tell them a bpm to stay under, use those figures or the zone bands; a lower aim "
             + "of your own is fine if you call it an aim and say the alert sits higher. "
+            + "\"usualPaceMinPerKm\" is their recent median pace: when you give a distance for "
+            + "a plan, work it out from that pace and the minutes (the app shows the same "
+            + "estimate on the plan card), never from a guess. "
             + "\"todayStatus\" lists what they already did today: with a session recorded, "
             + "today is not a rest day and not untouched, whatever the plan says; and do not "
             + "end every reply with today's plan, mention it only when it bears on the question. "

@@ -48,6 +48,8 @@ public class Coach {
     /** max_tokens covers the model's reasoning as well as its answer. */
     private static final int PLAN_TOKENS = 32000;
     private static final int ASK_TOKENS = 32000;
+    /** Without a reasoning pass the whole budget is the answer, so far less is needed. */
+    private static final int ASK_FAST_TOKENS = 6000;
     private static final int DEBRIEF_TOKENS = 32000;
 
     public interface Callback<T> {
@@ -588,9 +590,13 @@ public class Coach {
                 if (!history.isEmpty()) {
                     history = history.subList(0, history.size() - 1);  // drop this message
                 }
+                // A message that may change training gets the reasoning pass; a plain
+                // question gets the quick answer.
+                boolean thinking = CoachLogic.needsThinking(text);
                 String body = DeepSeek.body(CoachLogic.SYSTEM,
                         CoachLogic.askPrompt(brief, history.subList(
-                                Math.max(0, history.size() - CHAT_TURNS), history.size()), text), ASK_TOKENS);
+                                Math.max(0, history.size() - CHAT_TURNS), history.size()), text),
+                        thinking ? ASK_TOKENS : ASK_FAST_TOKENS, thinking);
                 a = CoachLogic.parseAsk(call(key, body), today());
                 if (a.plan != null) {
                     double[] loads = CoachLogic.recentLoads(sessions, now, zone);
@@ -609,6 +615,31 @@ public class Coach {
             inFlight.decrementAndGet();
             deliver(cb, a, error);
         });
+    }
+
+    /**
+     * "Why this plan?" without a request: today's plan already carries the coach's reasons, so
+     * it is read back (with anything the phone changed) as a conversation turn.
+     *
+     * @return false when there is no plan to explain, so the question should go to the coach
+     */
+    public boolean explainPlan(String question) {
+        CoachLogic.Plan p = todayPlan();
+        if (p == null || p.message.isEmpty()) {
+            return false;
+        }
+        StringBuilder sb = new StringBuilder(p.message);
+        for (String a : p.adjusted) {
+            sb.append("\n\n").append(a).append('.');
+        }
+        addChat("you", question);
+        addChat("coach", sb.toString());
+        return true;
+    }
+
+    /** About how far today's plan goes at their usual pace, in km (0: not known). */
+    public double estimatedKm(CoachLogic.Plan p) {
+        return CoachLogic.estimateKm(p, sessions(), System.currentTimeMillis());
     }
 
     private void applySettings(CoachLogic.Ask a) {

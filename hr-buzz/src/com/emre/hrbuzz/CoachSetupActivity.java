@@ -29,9 +29,9 @@ import java.util.Locale;
 public class CoachSetupActivity extends Activity {
 
     private static final String[] GOALS = {"Run a 10K", "Get fitter", "Lose weight",
-            "Lower resting HR", "Just feel better"};
+            "Lower resting HR", "Sleep & digestion", "Just feel better"};
     private static final int[] DAYS = {2, 3, 4, 5, 6, 7};
-    private static final int[] MINUTES = {20, 35, 45, 60, 90, 120};
+    private static final int[] MINUTES = {20, 35, 45, 60, 90, 120, 150, 180, 240};
     private static final String[] AROUND = {"Nothing", "Knees", "Back", "New to running"};
     private static final int[] MORNING = {6 * 60 + 30, 7 * 60, 7 * 60 + 30, 8 * 60, -1};
 
@@ -45,6 +45,7 @@ public class CoachSetupActivity extends Activity {
     private int minutes;
     private String around;
     private EditText aroundOther;
+    private EditText goalOther;
     private EditText targetInput;
     private EditText byInput;
     private int morning;
@@ -95,10 +96,14 @@ public class CoachSetupActivity extends Activity {
 
         // ---- the four questions
         section(root, "1 \u00b7 What for?");
-        chips(root, GOALS, goal, v -> goal = v);
-        if (!java.util.Arrays.asList(GOALS).contains(goal)) {
-            hint(root, "Now: " + goal);
-        }
+        boolean customGoal = !java.util.Arrays.asList(GOALS).contains(goal);
+        chips(root, GOALS, customGoal ? "" : goal, v -> {
+            goal = v;
+            goalOther.setText("");
+        });
+        hint(root, "Or describe it in your own words:");
+        goalOther = input(root, "e.g. 12-15 km most days, for my sleep",
+                customGoal ? goal : "");
         targetInput = input(root, "A target, if you have one: e.g. 10K under 55 min, "
                 + "resting HR under 55", prefs.getString("coachGoalTarget", ""));
         byInput = input(root, "By when: e.g. March 2027", prefs.getString("coachGoalBy", ""));
@@ -247,6 +252,12 @@ public class CoachSetupActivity extends Activity {
             }
         }
         boolean on = onSwitch.isChecked();
+        String ownGoal = CoachLogic.trim(goalOther.getText().toString(), 200);
+        if (!ownGoal.isEmpty()) {
+            goal = ownGoal;
+        } else if (!java.util.Arrays.asList(GOALS).contains(goal)) {
+            goal = "Get fitter";        // the words were cleared: back to a standard goal
+        }
         String other = aroundOther.getText().toString().trim();
         String target = CoachLogic.trim(targetInput.getText().toString(), 120);
         String by = CoachLogic.trim(byInput.getText().toString(), 40);

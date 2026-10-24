@@ -412,6 +412,11 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
 
         String title = plan.rest ? plan.title : plan.title + ", " + plan.totalMinutes() + " min";
         coachCard.addView(gap(Ui.bold(Ui.text(this, title, 24, Ui.TEXT)), 6));
+        double km = plan.rest ? 0 : coach.estimatedKm(plan);
+        if (km > 0) {
+            coachCard.addView(gap(Ui.text(this, "About " + CoachLogic.kmText(km)
+                    + " km at your usual pace", 13, Ui.TEXT2), 2));
+        }
         if (!plan.message.isEmpty()) {
             // The lead only: the whole note is in the coach screen.
             String lead = CoachLogic.shortMessage(plan.message, 180);
