@@ -649,13 +649,19 @@ public class Coach {
                     SessionStore.backfill(appContext, s);
                     self = info(s);
                 }
+                List<CoachLogic.SessionInfo> refs = new ArrayList<>();
                 Map<String, Object> brief = CoachLogic.brief(settings(), history, tests(),
                         readiness(), null, extras(),
-                        System.currentTimeMillis(), ZoneId.systemDefault());
+                        System.currentTimeMillis(), ZoneId.systemDefault(), refs);
                 CoachLogic.Plan plan = s.planTitle.isEmpty() ? null : storedPlan();
                 String body = DeepSeek.body(CoachLogic.SYSTEM,
                         CoachLogic.debriefPrompt(brief, self, plan), DEBRIEF_TOKENS);
-                Map<String, Object> answer = call(key, body);
+                // Stored with the debrief: which sessions its question is about (the phone
+                // works them out from the refs), and whether it had the talk test answer.
+                Map<String, Object> answer = new java.util.LinkedHashMap<>(call(key, body));
+                answer.put("askIds", new ArrayList<Object>(CoachLogic.askTargets(
+                        CoachLogic.parseDebrief(answer).askRefs, refs)));
+                answer.put("usedTalk", self.talk);
                 d = CoachLogic.parseDebrief(answer);
                 SessionStore.Summary fresh = SessionStore.load(appContext, s.id);
                 if (fresh != null) {

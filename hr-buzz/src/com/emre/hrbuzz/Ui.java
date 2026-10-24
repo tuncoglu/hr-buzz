@@ -62,6 +62,24 @@ final class Ui {
         return t;
     }
 
+    /**
+     * Makes the chips of a row share its width equally, so every option is in view at once
+     * (a scrolling row hides the last option behind the edge). Long labels wrap.
+     */
+    static void fillRow(LinearLayout row) {
+        Context c = row.getContext();
+        int n = row.getChildCount();
+        for (int i = 0; i < n; i++) {
+            TextView chip = (TextView) row.getChildAt(i);
+            chip.setTextSize(14);
+            chip.setPadding(dp(c, 6), chip.getPaddingTop(), dp(c, 6), chip.getPaddingBottom());
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.MATCH_PARENT, 1);
+            lp.rightMargin = i == n - 1 ? 0 : dp(c, 8);
+            chip.setLayoutParams(lp);
+        }
+    }
+
     /** Marks exactly one child of {@code group} selected. */
     static void select(ViewGroup group, int index) {
         for (int i = 0; i < group.getChildCount(); i++) {

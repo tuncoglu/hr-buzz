@@ -130,6 +130,10 @@
             android:exported="false"
             android:foregroundServiceType="connectedDevice|location" />
 
+        <receiver
+            android:name=".HowWasIt"
+            android:exported="false" />
+
         <provider
             android:name=".ExportProvider"
             android:authorities="com.emre.hrbuzz.export"

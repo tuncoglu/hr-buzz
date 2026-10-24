@@ -202,7 +202,18 @@ public final class CoachLogic {
         public String headline = "";
         public List<String> points = new ArrayList<>();
         public String next = "";
+        /** A question the coach wants answered with the talk test, and which sessions it is about. */
+        public String askText = "";
+        /** The model's session refs ("s1"...), as it wrote them. */
+        public List<String> askRefs = new ArrayList<>();
+        /** The same sessions as start times, worked out by the phone and stored with the debrief. */
+        public List<Long> askIds = new ArrayList<>();
+        /** The talk test answer (0: none) the session had when this debrief was written. */
+        public int usedTalk;
     }
+
+    /** Most sessions one debrief can ask about. */
+    static final int MAX_ASK = 3;
 
     static final String[] FEELINGS = {"", "awful", "poor", "ok", "good", "great"};
     /** Talk test answers, as told to the model: how easy speaking was in the main part. */
@@ -736,7 +747,47 @@ public final class CoachLogic {
             }
         }
         d.next = trim(Json.str(m, "next", ""), 400);
+        Object ask = m.get("ask");
+        if (ask instanceof Map) {
+            Map<String, Object> am = (Map<String, Object>) ask;
+            d.askText = trim(Json.str(am, "text", ""), 200);
+            for (Object o : Json.list(am.get("sessions"))) {
+                if (o instanceof String && d.askRefs.size() < MAX_ASK) {
+                    d.askRefs.add((String) o);
+                }
+            }
+        }
+        for (Object o : Json.list(m.get("askIds"))) {
+            if (o instanceof Number && d.askIds.size() < MAX_ASK) {
+                d.askIds.add(((Number) o).longValue());
+            }
+        }
+        d.usedTalk = (int) Json.num(m, "usedTalk", 0);
         return d;
+    }
+
+    /**
+     * The sessions a debrief's question is about, as start times: the refs the model used,
+     * looked up in the brief's table, keeping only sessions still without a talk test answer.
+     *
+     * @param table the sessions of the brief's "recentSessions", in order (ref "s1" is first)
+     */
+    public static List<Long> askTargets(List<String> refs, List<SessionInfo> table) {
+        List<Long> out = new ArrayList<>();
+        for (String ref : refs) {
+            if (ref == null || !ref.matches("s\\d{1,3}")) {
+                continue;
+            }
+            int i = Integer.parseInt(ref.substring(1)) - 1;
+            if (i < 0 || i >= table.size()) {
+                continue;
+            }
+            SessionInfo si = table.get(i);
+            if (si.talk == 0 && !out.contains(si.start) && out.size() < MAX_ASK) {
+                out.add(si.start);
+            }
+        }
+        return out;
     }
 
     // ------------------------------------------------------------------ brief
@@ -755,6 +806,18 @@ public final class CoachLogic {
     public static Map<String, Object> brief(Settings s, List<SessionInfo> sessions,
                                             List<Test> tests, Readiness r, Plan current,
                                             Extras x, long now, ZoneId zone) {
+        return brief(s, sessions, tests, r, current, x, now, zone, null);
+    }
+
+    /**
+     * As above; with {@code refsOut}, each recent session also carries a "ref" ("s1", "s2"...)
+     * the model can name in an answer, and the sessions are added to {@code refsOut} in that
+     * order so the phone can find them again.
+     */
+    public static Map<String, Object> brief(Settings s, List<SessionInfo> sessions,
+                                            List<Test> tests, Readiness r, Plan current,
+                                            Extras x, long now, ZoneId zone,
+                                            List<SessionInfo> refsOut) {
         LocalDate today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate();
         List<Object> zones = new ArrayList<>();
         for (int z = 1; z <= 5; z++) {
@@ -838,6 +901,10 @@ public final class CoachLogic {
             }
             if (ago < 14 && si.coachNext != null && !si.coachNext.isEmpty()) {
                 o.put("coachSaidNext", trim(si.coachNext, 300));
+            }
+            if (refsOut != null) {
+                o.put("ref", "s" + (recent.size() + 1));
+                refsOut.add(si);
             }
             recent.add(o);
         }
@@ -1562,7 +1629,13 @@ public final class CoachLogic {
                 + "number: where the time sat by zone, whether pace and heart rate held steady "
                 + "or drifted across the km splits, how they recovered in any breaks, how this "
                 + "fits the week's load and the days since a hard session.\"],\"next\":\"One or "
-                + "two sentences on what comes next and why.\"}";
+                + "two sentences on what comes next and why.\",\"ask\":null}\n"
+                + "\"ask\" is for one thing only: when your verdict on how hard some of their "
+                + "sessions were rests on heart rate zones alone, because those sessions in their "
+                + "history have no \"talkTest\", ask whether they could talk during them. Put it "
+                + "as {\"text\":\"One short question\",\"sessions\":[\"s2\"]}, naming up to "
+                + CoachLogic.MAX_ASK + " of those sessions by their \"ref\". Otherwise leave "
+                + "\"ask\" null, and never put a question anywhere else.";
     }
 
     // ------------------------------------------------------------------ helpers

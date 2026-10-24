@@ -39,12 +39,53 @@ public final class CoachTest {
         coachInputs();
         movement();
         testDue();
+        debriefAsk();
         client();
         if (failures > 0) {
             System.out.println(failures + " check(s) FAILED");
             System.exit(1);
         }
         System.out.println("all checks passed");
+    }
+
+    private static void debriefAsk() throws Exception {
+        // the model's question and the phone's own additions survive a round trip
+        Map<String, Object> m = Json.parseObject("{\"headline\":\"h\",\"points\":[],\"next\":\"n\","
+                + "\"ask\":{\"text\":\"Could you talk on those runs?\",\"sessions\":[\"s1\",\"s3\",\"junk\"]},"
+                + "\"askIds\":[1792671761863,1792669308962],\"usedTalk\":2}");
+        CoachLogic.Debrief d = CoachLogic.parseDebrief(m);
+        eq("ask text", "Could you talk on those runs?", d.askText);
+        eq("ask refs as written", java.util.Arrays.asList("s1", "s3", "junk"), d.askRefs);
+        eq("ask ids keep all 13 digits", java.util.Arrays.asList(1792671761863L, 1792669308962L), d.askIds);
+        eq("used talk", 2, d.usedTalk);
+        CoachLogic.Debrief none = CoachLogic.parseDebrief(Json.parseObject("{\"headline\":\"h\",\"ask\":null}"));
+        ok("no ask", none.askText.isEmpty() && none.askRefs.isEmpty() && none.askIds.isEmpty());
+        eq("no talk on an old debrief", 0, none.usedTalk);
+
+        // refs are numbered in the brief's order, and map back to the unanswered ones
+        List<CoachLogic.SessionInfo> ss = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            CoachLogic.SessionInfo si = new CoachLogic.SessionInfo();
+            si.start = NOW - (i + 1) * DAY;
+            si.sport = "Running";
+            si.activeMs = 30 * 60000;
+            si.talk = i == 1 ? 1 : 0;
+            ss.add(si);
+        }
+        List<CoachLogic.SessionInfo> table = new ArrayList<>();
+        Map<String, Object> b = CoachLogic.brief(settings(), ss, new ArrayList<>(),
+                new CoachLogic.Readiness(), null, new CoachLogic.Extras(), NOW, LONDON, table);
+        List<Object> recent = Json.list(b.get("recentSessions"));
+        eq("every recent session has a ref", "s1", Json.obj(recent.get(0)).get("ref"));
+        eq("refs run in order", "s4", Json.obj(recent.get(3)).get("ref"));
+        eq("table matches the refs", 4, table.size());
+        ok("no refs unless asked", Json.obj(Json.list(CoachLogic.brief(settings(), ss,
+                new ArrayList<>(), new CoachLogic.Readiness(), null, NOW, LONDON)
+                .get("recentSessions")).get(0)).get("ref") == null);
+        eq("answered session is not asked again", java.util.Arrays.asList(ss.get(0).start, ss.get(2).start),
+                CoachLogic.askTargets(java.util.Arrays.asList("s1", "s2", "s3", "s1", "x9", "s99"), table));
+        eq("never more than three", 3, CoachLogic.askTargets(java.util.Arrays.asList("s1", "s3", "s4",
+                "s1"), table).size());
     }
 
     private static void testDue() {

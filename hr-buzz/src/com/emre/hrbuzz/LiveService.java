@@ -102,7 +102,7 @@ public class LiveService extends Service implements HrManager.Listener, Recorder
             recorder.resume();
         } else if (ACTION_FINISH.equals(action)) {
             // Saved; the training screen opens the summary next time it is in front.
-            recorder.stop();
+            askHowItWas(recorder.stop());
         }
         goForeground(recorder.usesGps());
         // If the system restarted us after a kill, pick the strap back up.
@@ -110,6 +110,17 @@ public class LiveService extends Service implements HrManager.Listener, Recorder
             hr.start();
         }
         return START_STICKY;
+    }
+
+    /** After a session the coach will debrief: the talk test as a notification, for the pocket. */
+    private void askHowItWas(long id) {
+        if (id <= 0 || !Coach.get(this).isEnabled()) {
+            return;
+        }
+        SessionStore.Summary saved = SessionStore.load(this, id);
+        if (saved != null && saved.talk == 0 && saved.activeMs >= SummaryActivity.AUTO_DEBRIEF_MS) {
+            HowWasIt.post(this, saved);
+        }
     }
 
     private void goForeground(boolean location) {

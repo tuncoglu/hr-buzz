@@ -5,6 +5,8 @@ import android.app.AlertDialog;
 import android.content.ClipData;
 import android.content.Intent;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
@@ -18,6 +20,7 @@ import android.widget.Toast;
 
 import java.io.File;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -34,15 +37,31 @@ public class SummaryActivity extends Activity {
     private static final String[] FEELINGS = {"Awful", "Poor", "OK", "Good", "Great"};
     private static final String[] TALK = {"Full sentences", "Short phrases", "A few words"};
     /** Shorter sessions (false starts, tests) get a debrief only on request: each one costs a call. */
-    private static final long AUTO_DEBRIEF_MS = 5 * 60000L;
+    static final long AUTO_DEBRIEF_MS = 5 * 60000L;
+    /** How long a fresh session waits for the talk test before the coach debriefs without it. */
+    private static final long WAIT_FOR_TALK_MS = 45000L;
 
     private SessionStore.Summary summary;
     private EditText notes;
     private LinearLayout coachBox;
     private boolean debriefing;
     private String debriefError;
-    /** They chose a debrief without answering the talk test. */
+    /** They chose a debrief without answering the talk test (or the wait ran out). */
     private boolean talkSkipped;
+    private LinearLayout talkRow;
+    private LinearLayout feelRow;
+    /** The talk test was changed on this screen, so it wins over an answer from the notification. */
+    private boolean talkTouched;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private boolean waiting;
+    private final Runnable waitedForTalk = () -> {
+        waiting = false;
+        if (summary != null && !isFinishing() && !debriefing && summary.coachNote.isEmpty()
+                && summary.talk == 0) {
+            talkSkipped = true;
+            debrief();
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -56,6 +75,27 @@ public class SummaryActivity extends Activity {
             return;
         }
         build(SessionStore.samples(this, id));
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // An answer given on the "How was it?" notification while this screen was away.
+        if (summary == null || talkRow == null || talkTouched) {
+            return;
+        }
+        SessionStore.Summary disk = SessionStore.load(this, summary.id);
+        if (disk != null && disk.talk != summary.talk) {
+            summary.talk = disk.talk;
+            Ui.select(talkRow, summary.talk - 1);
+            afterTalkChanged();
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        handler.removeCallbacks(waitedForTalk);
+        super.onDestroy();
     }
 
     @Override
@@ -102,6 +142,12 @@ public class SummaryActivity extends Activity {
                     0xFF4F8EF7));
         }
 
+        // A session just finished and not yet rated: the two questions come first.
+        boolean askFirst = isFresh() && !s.imported && (s.talk == 0 || s.feeling == 0);
+        if (askFirst) {
+            howCard(root);
+        }
+
         // ---- numbers
         LinearLayout card = card(root);
         boolean distance = s.gps && s.distanceM > 0;
@@ -142,33 +188,9 @@ public class SummaryActivity extends Activity {
                     + Training.km(walked[1]) + " km, included above", 14, Ui.TEXT2));
         }
 
-        // ---- talk test: how hard it really was, whatever the zones say
-        section(root, "In the main part, could you talk?");
-        LinearLayout talk = new LinearLayout(this);
-        for (int i = 0; i < TALK.length; i++) {
-            final int value = i + 1;
-            TextView chip = Ui.chip(this, TALK[i]);
-            chip.setSelected(s.talk == value);
-            chip.setOnClickListener(v -> {
-                summary.talk = summary.talk == value ? 0 : value;
-                Ui.select(talk, summary.talk - 1);
-                saveSummary();
-                if (coachBox != null && summary.coachNote.isEmpty() && !debriefing) {
-                    fillCoach();        // a waiting debrief starts once it is answered
-                }
-            });
-            talk.addView(chip);
+        if (!askFirst) {
+            howCard(root);
         }
-        android.widget.HorizontalScrollView talkScroll = new android.widget.HorizontalScrollView(this);
-        talkScroll.setHorizontalScrollBarEnabled(false);
-        talkScroll.addView(talk);
-        LinearLayout.LayoutParams tl = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        tl.topMargin = Ui.dp(this, 10);
-        root.addView(talkScroll, tl);
-        root.addView(Ui.text(this, "The coach checks your zones against this: if \"easy\" "
-                + "runs keep coming out as hard by heart rate, your max heart rate may be off.",
-                13, Ui.TEXT3));
 
         // ---- the coach's debrief
         if (!s.coachNote.isEmpty() || Coach.get(this).isEnabled()) {
@@ -231,28 +253,8 @@ public class SummaryActivity extends Activity {
             }
         }
 
-        // ---- feeling + notes
-        section(root, "How did it feel?");
-        LinearLayout feel = new LinearLayout(this);
-        for (int i = 0; i < FEELINGS.length; i++) {
-            final int value = i + 1;
-            TextView chip = Ui.chip(this, FEELINGS[i]);
-            chip.setSelected(s.feeling == value);
-            chip.setOnClickListener(v -> {
-                summary.feeling = summary.feeling == value ? 0 : value;
-                Ui.select(feel, summary.feeling - 1);
-                saveSummary();
-            });
-            feel.addView(chip);
-        }
-        android.widget.HorizontalScrollView feelScroll = new android.widget.HorizontalScrollView(this);
-        feelScroll.setHorizontalScrollBarEnabled(false);
-        feelScroll.addView(feel);
-        LinearLayout.LayoutParams fl = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        fl.topMargin = Ui.dp(this, 10);
-        root.addView(feelScroll, fl);
-
+        // ---- notes
+        section(root, "Notes");
         notes = new EditText(this);
         notes.setHint("Training notes");
         notes.setText(s.notes);
@@ -289,10 +291,108 @@ public class SummaryActivity extends Activity {
         setContentView(scroll);
     }
 
+    // ------------------------------------------------------------ how was it
+
+    /** The talk test and how it felt: what the coach checks the zones against. */
+    private void howCard(LinearLayout root) {
+        LinearLayout c = card(root);
+        TextView label = Ui.text(this, "HOW WAS IT?", 12, Ui.TEXT2);
+        label.setLetterSpacing(0.08f);
+        c.addView(label);
+        c.addView(padTop(Ui.text(this, "In the main part, could you talk?", 15, Ui.TEXT)));
+        talkRow = new LinearLayout(this);
+        for (int i = 0; i < TALK.length; i++) {
+            final int value = i + 1;
+            TextView chip = Ui.chip(this, TALK[i]);
+            chip.setSelected(summary.talk == value);
+            chip.setOnClickListener(v -> setTalk(value));
+            talkRow.addView(chip);
+        }
+        c.addView(fullRow(talkRow));
+        c.addView(padTop(Ui.text(this, "The coach checks your zones against this: if \"easy\" "
+                + "runs keep coming out as hard by heart rate, your max heart rate may be off.",
+                13, Ui.TEXT3)));
+        c.addView(padTop(Ui.text(this, "How did it feel?", 15, Ui.TEXT)));
+        feelRow = new LinearLayout(this);
+        for (int i = 0; i < FEELINGS.length; i++) {
+            final int value = i + 1;
+            TextView chip = Ui.chip(this, FEELINGS[i]);
+            chip.setSelected(summary.feeling == value);
+            chip.setOnClickListener(v -> {
+                summary.feeling = summary.feeling == value ? 0 : value;
+                Ui.select(feelRow, summary.feeling - 1);
+                saveSummary();
+            });
+            feelRow.addView(chip);
+        }
+        c.addView(scroller(feelRow));
+    }
+
+    private android.widget.HorizontalScrollView scroller(LinearLayout row) {
+        android.widget.HorizontalScrollView sv = new android.widget.HorizontalScrollView(this);
+        sv.setHorizontalScrollBarEnabled(false);
+        sv.addView(row);
+        sv.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        ((LinearLayout.LayoutParams) sv.getLayoutParams()).topMargin = Ui.dp(this, 10);
+        return sv;
+    }
+
+    /** The talk test options side by side, each with an equal share of the width. */
+    private LinearLayout fullRow(LinearLayout row) {
+        Ui.fillRow(row);
+        row.setLayoutParams(new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
+        ((LinearLayout.LayoutParams) row.getLayoutParams()).topMargin = Ui.dp(this, 10);
+        return row;
+    }
+
+    private void setTalk(int value) {
+        talkTouched = true;
+        summary.talk = summary.talk == value ? 0 : value;
+        Ui.select(talkRow, summary.talk - 1);
+        saveSummary();
+        if (summary.talk > 0) {
+            HowWasIt.cancel(this);      // answered here: the notification is not needed
+        }
+        afterTalkChanged();
+    }
+
     /**
-     * Shows the stored debrief; for a session of 5 minutes or more that just finished, asks for
-     * one by itself once the talk test is answered (or skipped), otherwise offers a button (so
-     * opening an old session or a false start never spends a request).
+     * A talk test answer arrived: a debrief still waiting for it starts, and one written
+     * without it (a fresh session only, so old ones never spend a request) is written again.
+     */
+    private void afterTalkChanged() {
+        if (coachBox == null || debriefing || summary.talk == 0) {
+            return;
+        }
+        if (summary.coachNote.isEmpty()) {
+            fillCoach();
+        } else if (isFresh() && debriefUsedTalk() == 0) {
+            debrief();
+        }
+    }
+
+    private int debriefUsedTalk() {
+        try {
+            return CoachLogic.parseDebrief(Json.parseObject(summary.coachNote)).usedTalk;
+        } catch (Json.ParseException e) {
+            return 0;
+        }
+    }
+
+    /** Finished within the last 3 hours: still the session they just did. */
+    private boolean isFresh() {
+        return System.currentTimeMillis() - Math.max(summary.end, summary.id) < 3 * 3600 * 1000L;
+    }
+
+    // ------------------------------------------------------------------ coach
+
+    /**
+     * Shows the stored debrief. For a fresh session of 5 minutes or more it is asked for by
+     * itself: at once when the talk test is answered, otherwise after a short wait (an answer
+     * during the wait starts it sooner). Anything older, or a false start, gets a button, so
+     * opening an old session never spends a request.
      */
     private void fillCoach() {
         coachBox.removeAllViews();
@@ -312,7 +412,7 @@ public class SummaryActivity extends Activity {
             h.setLineSpacing(0, 1.15f);
             coachBox.addView(h);
             for (String pnt : d.points) {
-                TextView t = Ui.text(this, "\u2022 " + pnt, 14, 0xFFC8C8CE);
+                TextView t = Ui.text(this, "• " + pnt, 14, 0xFFC8C8CE);
                 t.setPadding(0, Ui.dp(this, 6), 0, 0);
                 coachBox.addView(t);
             }
@@ -321,26 +421,37 @@ public class SummaryActivity extends Activity {
                 n.setPadding(0, Ui.dp(this, 8), 0, 0);
                 coachBox.addView(n);
             }
+            askBlock(d);
+            if (debriefing) {
+                coachBox.addView(padTop(Ui.text(this, "Updating with your answer…", 13,
+                        Ui.TEXT2)));
+            } else if (debriefError != null) {
+                coachBox.addView(padTop(Ui.text(this, debriefError, 13, 0xFFFF6961)));
+            }
             return;
         }
         if (debriefing) {
-            coachBox.addView(padTop(Ui.text(this, "Reading your session\u2026", 15, Ui.TEXT2)));
+            coachBox.addView(padTop(Ui.text(this, "Reading your session…", 15, Ui.TEXT2)));
             return;
         }
         if (debriefError != null) {
             coachBox.addView(padTop(Ui.text(this, debriefError, 14, 0xFFFF6961)));
         }
-        boolean fresh = System.currentTimeMillis() - Math.max(summary.end, summary.id)
-                < 3 * 3600 * 1000L;
-        if (fresh && debriefError == null && summary.activeMs >= AUTO_DEBRIEF_MS) {
+        if (isFresh() && debriefError == null && summary.activeMs >= AUTO_DEBRIEF_MS) {
             if (summary.talk == 0 && !talkSkipped) {
-                coachBox.addView(padTop(Ui.text(this, "Answer \"could you talk?\" above and "
-                        + "the coach will debrief this session with it.", 15, Ui.TEXT2)));
-                Button now = button(coachBox, "Debrief without it", false);
+                coachBox.addView(padTop(Ui.text(this, "The coach will debrief in a moment. "
+                        + "Answer \"could you talk?\" and it will use it.", 15, Ui.TEXT2)));
+                Button now = button(coachBox, "Debrief now", false);
                 now.setOnClickListener(v -> {
+                    handler.removeCallbacks(waitedForTalk);
+                    waiting = false;
                     talkSkipped = true;
                     debrief();
                 });
+                if (!waiting) {
+                    waiting = true;
+                    handler.postDelayed(waitedForTalk, WAIT_FOR_TALK_MS);
+                }
                 return;
             }
             debrief();
@@ -348,6 +459,45 @@ public class SummaryActivity extends Activity {
         }
         Button ask = button(coachBox, debriefError != null ? "Try again" : "Ask the coach about this session", false);
         ask.setOnClickListener(v -> debrief());
+    }
+
+    /**
+     * The coach's question about other sessions, as the talk test chips for each one still
+     * unanswered. Answers go straight to those sessions and feed every later plan and debrief.
+     */
+    private void askBlock(CoachLogic.Debrief d) {
+        List<SessionStore.Summary> open = new ArrayList<>();
+        for (long id : d.askIds) {
+            SessionStore.Summary other = id == summary.id ? null : SessionStore.load(this, id);
+            if (other != null && other.talk == 0) {
+                open.add(other);
+            }
+        }
+        if (open.isEmpty()) {
+            return;
+        }
+        coachBox.addView(padTop(Ui.bold(Ui.text(this, d.askText.isEmpty()
+                ? "Could you talk during these?" : d.askText, 15, Ui.TEXT))));
+        SimpleDateFormat when = new SimpleDateFormat("EEE d MMM, HH:mm", Locale.getDefault());
+        for (SessionStore.Summary other : open) {
+            coachBox.addView(padTop(Ui.text(this, other.sport + ", " + when.format(new Date(other.id))
+                    + ", avg HR " + other.avgHr, 13, Ui.TEXT2)));
+            LinearLayout row = new LinearLayout(this);
+            for (int i = 0; i < TALK.length; i++) {
+                final int value = i + 1;
+                TextView chip = Ui.chip(this, TALK[i]);
+                chip.setOnClickListener(v -> {
+                    SessionStore.Summary fresh = SessionStore.load(this, other.id);
+                    if (fresh != null) {
+                        fresh.talk = value;
+                        SessionStore.save(this, fresh);
+                    }
+                    fillCoach();
+                });
+                row.addView(chip);
+            }
+            coachBox.addView(fullRow(row));
+        }
     }
 
     private void debrief() {
@@ -367,11 +517,17 @@ public class SummaryActivity extends Activity {
         fillCoach();
     }
 
-    /** Saves feeling/notes without wiping a debrief the coach wrote meanwhile. */
+    /**
+     * Saves feeling and notes without wiping what changed behind this screen: a debrief the
+     * coach wrote meanwhile, or a talk test answer given on the notification.
+     */
     private void saveSummary() {
         SessionStore.Summary disk = SessionStore.load(this, summary.id);
         if (disk != null && summary.coachNote.isEmpty()) {
             summary.coachNote = disk.coachNote;
+        }
+        if (disk != null && !talkTouched) {
+            summary.talk = disk.talk;
         }
         SessionStore.save(this, summary);
     }
