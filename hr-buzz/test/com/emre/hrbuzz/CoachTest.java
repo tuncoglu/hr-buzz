@@ -38,12 +38,22 @@ public final class CoachTest {
         brief();
         coachInputs();
         movement();
+        testDue();
         client();
         if (failures > 0) {
             System.out.println(failures + " check(s) FAILED");
             System.exit(1);
         }
         System.out.println("all checks passed");
+    }
+
+    private static void testDue() {
+        long day = 86400000L;
+        long now = 100 * day;
+        eq("never tested", true, CoachLogic.testDue(0, now));
+        eq("yesterday's test", false, CoachLogic.testDue(now - day, now));
+        eq("a week ago exactly", false, CoachLogic.testDue(now - 7 * day, now));
+        eq("eight days ago", true, CoachLogic.testDue(now - 8 * day, now));
     }
 
     private static void json() throws Exception {

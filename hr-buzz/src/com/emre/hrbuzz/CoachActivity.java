@@ -170,8 +170,19 @@ public class CoachActivity extends Activity {
             if (!plan.message.isEmpty()) {
                 today.addView(gap(Ui.text(this, plan.message, 15, 0xFFC8C8CE), 6));
             }
+            if (!plan.rest) {
+                today.addView(Ui.stepsBar(this, plan), lpTop(12));
+            }
             for (String a : plan.adjusted) {
                 today.addView(gap(Ui.text(this, "\u2022 " + a, 13, 0xFFFFC400), 4));
+            }
+            // An updated plan has its own Start below, in the conversation.
+            if (!plan.rest && !coach.todayDone() && !showUpdated) {
+                Button start = startButton();
+                LinearLayout.LayoutParams slp = new LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 52));
+                slp.topMargin = Ui.dp(this, 14);
+                today.addView(start, slp);
             }
         }
         if (plan != null && !plan.week.isEmpty()) {
@@ -292,13 +303,8 @@ public class CoachActivity extends Activity {
         }
         LinearLayout buttons = new LinearLayout(this);
         if (!plan.rest) {
-            Button start = new Button(this, null, 0, R.style.PrimaryButton);
+            Button start = startButton();
             start.setText("Start now");
-            start.setAllCaps(false);
-            start.setTextSize(16);
-            start.setOnClickListener(v -> startActivity(new Intent(this, MainActivity.class)
-                    .putExtra(MainActivity.EXTRA_START_PLAN, true)
-                    .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, Ui.dp(this, 48), 1);
             lp.rightMargin = Ui.dp(this, 8);
             buttons.addView(start, lp);
@@ -322,6 +328,25 @@ public class CoachActivity extends Activity {
         c.addView(buttons, lp);
         content.removeView(c);
         return c;
+    }
+
+    /** Starts today's plan: the home screen does the permission prompts and the set-up. */
+    private Button startButton() {
+        Button start = new Button(this, null, 0, R.style.PrimaryButton);
+        start.setText("Start this session");
+        start.setAllCaps(false);
+        start.setTextSize(16);
+        start.setOnClickListener(v -> startActivity(new Intent(this, MainActivity.class)
+                .putExtra(MainActivity.EXTRA_START_PLAN, true)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_SINGLE_TOP)));
+        return start;
+    }
+
+    private LinearLayout.LayoutParams lpTop(int topDp) {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = Ui.dp(this, topDp);
+        return lp;
     }
 
     private View bubble(String text, boolean mine) {

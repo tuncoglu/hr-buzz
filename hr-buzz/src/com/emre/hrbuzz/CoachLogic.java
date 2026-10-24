@@ -1384,6 +1384,14 @@ public final class CoachLogic {
         return new double[]{thisWeek, lastWeek};
     }
 
+    /** A resting test older than this is worth asking for again. */
+    static final long TEST_DUE_MS = 7 * 86400000L;
+
+    /** True when the last resting test (0: never) is old enough to ask for another. */
+    static boolean testDue(long lastTestMs, long now) {
+        return now - lastTestMs > TEST_DUE_MS;
+    }
+
     // ----------------------------------------------------------------- prompts
 
     public static final String SYSTEM = "You are the coach inside HR Buzz, a heart rate "

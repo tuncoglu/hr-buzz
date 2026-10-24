@@ -21,6 +21,7 @@ public final class MoveTest {
         workouts();
         midnight();
         level();
+        farAbove();
         if (failures > 0) {
             System.out.println(failures + " check(s) FAILED");
             System.exit(1);
@@ -82,6 +83,21 @@ public final class MoveTest {
         eq("covered day", 9, s.on(DAY));
         eq("uncovered day", -1, s.on(DAY.minusDays(1)));
         eq("total skips unknown", 9, Move.Summary.total(s.lastWeek(DAY)));
+    }
+
+    private static void farAbove() {
+        eq("at the guide", false, Move.farAboveGoal(150));
+        eq("3x the guide is not yet far above", false, Move.farAboveGoal(450));
+        eq("past 3x the guide", true, Move.farAboveGoal(451));
+        java.util.List<long[]> list = new java.util.ArrayList<>();
+        list.add(new long[]{T0, 40 * MIN, 5000});
+        list.add(new long[]{T0 - 6 * 86400000L, 20 * MIN, 2500});
+        list.add(new long[]{T0 - 8 * 86400000L, 60 * MIN, 9000});     // outside the week
+        list.add(new long[]{T0 + 86400000L, 60 * MIN, 9000});         // in the future
+        long[] w = Move.recordedWeek(list, T0 + 60 * MIN);
+        eq("sessions in the week", 2L, w[0]);
+        eq("their time", 60 * MIN, w[1]);
+        eq("their distance", 7500L, w[2]);
     }
 
     private static void eq(String name, Object want, Object got) {

@@ -51,6 +51,10 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
     private Switch alarmSwitch;
     private Button connectButton;
     private Button startButton;
+    /** Sport picker and Start: hidden behind a link while today's plan waits to be followed. */
+    private View freeStart;
+    private TextView freeLink;
+    private boolean freeMode;
     private LinearLayout sportsRow;
     private LinearLayout sessionsList;
     private TextView noSessions;
@@ -87,6 +91,8 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
         alarmSwitch = findViewById(R.id.alarmOn);
         connectButton = findViewById(R.id.connect);
         startButton = findViewById(R.id.start);
+        freeStart = findViewById(R.id.freeStart);
+        freeLink = findViewById(R.id.freeLink);
         sportsRow = findViewById(R.id.sports);
         sessionsList = findViewById(R.id.sessions);
         noSessions = findViewById(R.id.noSessions);
@@ -117,24 +123,12 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
 
         connectButton.setOnClickListener(v -> toggle());
         startButton.setOnClickListener(v -> {
-            CoachLogic.Plan waiting = pendingPlan();
-            if (waiting == null) {
-                coachedStart = false;
-                startSession();
-                return;
-            }
-            // A plan is waiting and this tap would skip it: say so, and let them choose.
-            new android.app.AlertDialog.Builder(this)
-                    .setTitle("Follow today's plan?")
-                    .setMessage(waiting.title + ", " + waiting.totalMinutes() + " min. The coach "
-                            + "sets your alerts and speaks each step; a free session has neither.")
-                    .setPositiveButton("Follow the plan", (d, w) -> startPlan())
-                    .setNegativeButton("Free session", (d, w) -> {
-                        coachedStart = false;
-                        startSession();
-                    })
-                    .setNeutralButton("Cancel", null)
-                    .show();
+            coachedStart = false;
+            startSession();
+        });
+        freeLink.setOnClickListener(v -> {
+            freeMode = true;
+            showRecorder();
         });
         findViewById(R.id.settings).setOnClickListener(
                 v -> startActivity(new Intent(this, SettingsActivity.class)));
@@ -290,6 +284,10 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
             return;
         }
         int total = Move.Summary.total(week);
+        if (Move.farAboveGoal(total)) {
+            drawRecordedWeek(total);
+            return;
+        }
         moveCard.addView(gap(Ui.bold(Ui.text(this, week[0] + " min today", 24, Ui.TEXT)), 6));
         moveCard.addView(gap(Ui.text(this, total + " min in the last 7 days (goal "
                 + Move.WEEKLY_GOAL + ")", 15, 0xFFC8C8CE), 4));
@@ -297,6 +295,25 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
         if (!level.equals("unknown")) {
             moveCard.addView(gap(Ui.text(this, "Lately: " + level, 13, Ui.TEXT2), 4));
         }
+    }
+
+    /** For someone far past the 150 min guide, what HR Buzz recorded says more than a goal. */
+    private void drawRecordedWeek(int moving) {
+        List<long[]> mine = new ArrayList<>();
+        for (SessionStore.Summary s : SessionStore.list(this)) {
+            if (!s.recording) {
+                mine.add(new long[]{s.id, s.activeMs, (long) (s.gps ? s.distanceM : 0)});
+            }
+        }
+        long[] w = Move.recordedWeek(mine, System.currentTimeMillis());
+        moveCard.removeAllViews();
+        moveCard.addView(label("LAST 7 DAYS"));
+        moveCard.addView(gap(Ui.bold(Ui.text(this, Training.km(w[2]) + " km recorded", 24,
+                Ui.TEXT)), 6));
+        moveCard.addView(gap(Ui.text(this, w[0] + (w[0] == 1 ? " session, " : " sessions, ")
+                + Training.duration(w[1]), 15, 0xFFC8C8CE), 4));
+        moveCard.addView(gap(Ui.text(this, "Moving " + moving + " min in all, well past the "
+                + Move.WEEKLY_GOAL + " min guide", 13, Ui.TEXT2), 4));
     }
 
     // ------------------------------------------------------------------ coach
@@ -319,6 +336,15 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
     }
 
     private void showCoach() {
+        showCoachCard();
+        // The check-in comes after the plan: the plan is what they opened the app for.
+        Coach coach = Coach.get(this);
+        if (coach.isEnabled() && !coach.todayDone()) {
+            showCheckIn(coach);
+        }
+    }
+
+    private void showCoachCard() {
         coachCard.removeAllViews();
         CoachLogic.Plan waiting = pendingPlan();
         showRecorder(waiting);      // its label depends on whether a plan is waiting
@@ -352,9 +378,6 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
         if (r.level != CoachLogic.Readiness.UNKNOWN) {
             coachCard.addView(gap(Ui.text(this, r.text, 13,
                     r.level == CoachLogic.Readiness.READY ? 0xFF34C759 : 0xFFFFC400), 2));
-        }
-        if (!coach.todayDone()) {
-            showCheckIn(coach);
         }
 
         CoachLogic.Plan plan = coach.todayPlan();
@@ -403,15 +426,15 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
             }
         }
         if (!plan.rest) {
-            coachCard.addView(stepsBar(plan), buttonLp(12));
+            coachCard.addView(Ui.stepsBar(this, plan), buttonLp(12));
             int[] lim = mainLimits(plan);
             coachCard.addView(gap(Ui.text(this, "Alerts set for you: beep above " + lim[0]
                     + (lim[1] > 0 ? ", below " + lim[1] : "")
                     + (hr.isAlarmOn() ? "" : ". Your alarm switch is off; alerts turn on for "
                     + "this session only"), 13, 0xFFC8C8CE), 8));
             if (waiting != null) {
-                coachCard.addView(gap(Ui.text(this, "Not started yet. Tap the button below to "
-                        + "follow it: alerts and spoken steps only run in a planned session.",
+                coachCard.addView(gap(Ui.text(this, "Not started yet. Tap Start below to follow "
+                        + "it: alerts and spoken steps only run in a planned session.",
                         13, 0xFF34C759), 6));
             }
         }
@@ -503,15 +526,42 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
             coachCard.addView(checkInRow("Digestion", GUT, answers[1],
                     v -> coach.setCheckIn(-1, v)), btnLp(6));
         }
-        List<CoachLogic.Test> tests = Prefs.fitnessTests(this);
-        long last = tests.isEmpty() ? 0 : tests.get(tests.size() - 1).t;
-        if (System.currentTimeMillis() - last > 20 * 3600 * 1000L) {
+        if (testLinkDue(coach)) {
             TextView test = Ui.text(this, "Take the 5-minute resting test, so today matches how "
                     + "you recovered", 13, 0xFF4F8EF7);
             test.setPadding(0, Ui.dp(this, 8), 0, Ui.dp(this, 4));
             test.setOnClickListener(v -> startActivity(new Intent(this, FitnessTestActivity.class)));
             coachCard.addView(test);
         }
+    }
+
+    private static final int MAX_TEST_NAG_DAYS = 3;
+
+    /**
+     * Whether to offer the resting test on the card: only once the last one is a week old, and
+     * on at most {@link #MAX_TEST_NAG_DAYS} days in a row of being ignored, so a person who does
+     * not do them is not asked every morning. Doing a test starts the count again.
+     */
+    private boolean testLinkDue(Coach coach) {
+        List<CoachLogic.Test> tests = Prefs.fitnessTests(this);
+        long last = tests.isEmpty() ? 0 : tests.get(tests.size() - 1).t;
+        android.content.SharedPreferences p = Prefs.of(this);
+        int nags = p.getInt("testNags", 0);
+        if (!CoachLogic.testDue(last, System.currentTimeMillis())) {
+            if (nags != 0) {
+                p.edit().putInt("testNags", 0).apply();
+            }
+            return false;
+        }
+        String today = coach.today();
+        if (today.equals(p.getString("testNagDay", ""))) {
+            return true;                // already counted today
+        }
+        if (nags >= MAX_TEST_NAG_DAYS) {
+            return false;
+        }
+        p.edit().putInt("testNags", nags + 1).putString("testNagDay", today).apply();
+        return true;
     }
 
     /** A label and chips; tapping saves 1-based, tapping the chosen one again clears it. */
@@ -588,35 +638,6 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
             }
         }
         return CoachLogic.stepLimits(main, Prefs.hrMax(this), hr.getUserThreshold());
-    }
-
-    /** The plan's steps as coloured bars sized by duration, with a caption under each. */
-    private View stepsBar(CoachLogic.Plan plan) {
-        LinearLayout col = new LinearLayout(this);
-        col.setOrientation(LinearLayout.VERTICAL);
-        LinearLayout bar = new LinearLayout(this);
-        LinearLayout labels = new LinearLayout(this);
-        for (CoachLogic.Step st : plan.steps) {
-            View seg = new View(this);
-            android.graphics.drawable.GradientDrawable d = new android.graphics.drawable.GradientDrawable();
-            d.setCornerRadius(Ui.dp(this, 5));
-            d.setColor(Ui.ZONE_COLORS[st.zoneHigh]);
-            seg.setBackground(d);
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, Ui.dp(this, 10),
-                    Math.max(1, st.minutes));
-            lp.rightMargin = Ui.dp(this, 3);
-            bar.addView(seg, lp);
-            String zones = st.zoneLow == st.zoneHigh ? "Z" + st.zoneLow
-                    : "Z" + st.zoneLow + "\u2013" + st.zoneHigh;
-            TextView t = Ui.text(this, st.minutes + "\u2032 " + zones, 12, Ui.TEXT2);
-            t.setSingleLine();
-            t.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            labels.addView(t, new LinearLayout.LayoutParams(0,
-                    ViewGroup.LayoutParams.WRAP_CONTENT, Math.max(1, st.minutes)));
-        }
-        col.addView(bar);
-        col.addView(labels);
-        return col;
     }
 
     private TextView label(String s) {
@@ -873,6 +894,7 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
         Ui.show(batteryHint, !batteryUnrestricted(this));
         showCoach();
         showMove();
+        Coach.get(this).scheduleIfMissing();
         autoPlan();
         askProfile();
         Ui.select(sportsRow, java.util.Arrays.asList(Prefs.SPORTS).indexOf(Prefs.sport(this)));
@@ -894,7 +916,6 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
             return;
         }
         int peak = Prefs.hrMaxPending(this);
-        Coach.get(this).scheduleIfMissing();
         if (peak <= 0) {
             return;
         }
@@ -985,10 +1006,17 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
 
     /** @param waiting today's plan, not started yet: {@link #pendingPlan} */
     private void showRecorder(CoachLogic.Plan waiting) {
+        if (waiting == null) {
+            freeMode = false;
+        }
+        // One way to start: the plan's own button, until they ask for a free session.
+        boolean planOnly = waiting != null && !freeMode;
+        freeStart.setVisibility(planOnly ? View.GONE : View.VISIBLE);
+        freeLink.setVisibility(planOnly ? View.VISIBLE : View.GONE);
         if (recorder.isRecording()) {
             startButton.setText(recorder.getSession().sport + " in progress \u2014 open");
         } else {
-            startButton.setText(waiting != null ? "Start a free session" : "Start");
+            startButton.setText("Start");
         }
     }
 

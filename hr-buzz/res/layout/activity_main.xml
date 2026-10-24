@@ -185,6 +185,23 @@
         </LinearLayout>
 
         <TextView
+            android:id="@+id/freeLink"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:padding="14dp"
+            android:text="Start a free session instead"
+            android:textColor="#4F8EF7"
+            android:textSize="15sp"
+            android:visibility="gone" />
+
+        <LinearLayout
+            android:id="@+id/freeStart"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+        <TextView
             style="@style/Section"
             android:text="Sport" />
 
@@ -208,6 +225,7 @@
             style="@style/PrimaryButton"
             android:layout_marginTop="18dp"
             android:text="Start" />
+        </LinearLayout>
 
         <Button
             android:id="@+id/fitnessTest"

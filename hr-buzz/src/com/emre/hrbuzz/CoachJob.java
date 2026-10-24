@@ -81,7 +81,7 @@ public class CoachJob extends JobService {
                 .setCategory(Notification.CATEGORY_REMINDER);
         List<CoachLogic.Test> tests = Prefs.fitnessTests(c);
         long lastTest = tests.isEmpty() ? 0 : tests.get(tests.size() - 1).t;
-        if (!p.rest && System.currentTimeMillis() - lastTest > 20 * 3600 * 1000L) {
+        if (!p.rest && CoachLogic.testDue(lastTest, System.currentTimeMillis())) {
             // A morning test lets the phone soften today if the body has not recovered.
             PendingIntent test = PendingIntent.getActivity(c, 12,
                     new Intent(c, FitnessTestActivity.class),

@@ -122,6 +122,32 @@ public final class Move {
     }
 
     /**
+     * Far past the weekly guide (3 times it): the guide says nothing any more, so the home card
+     * shows what was recorded instead.
+     */
+    public static boolean farAboveGoal(int weekTotal) {
+        return weekTotal > 3 * WEEKLY_GOAL;
+    }
+
+    /**
+     * Sessions started in the last 7 days.
+     *
+     * @param sessions each {startMs, activeMs, distanceM}
+     * @return {count, activeMs, distanceM}
+     */
+    public static long[] recordedWeek(java.util.List<long[]> sessions, long now) {
+        long[] out = new long[3];
+        for (long[] s : sessions) {
+            if (s[0] <= now && now - s[0] < 7 * 86400000L) {
+                out[0]++;
+                out[1] += s[1];
+                out[2] += s[2];
+            }
+        }
+        return out;
+    }
+
+    /**
      * A word for how mobile the person has been over the 7 days, from the average of the days
      * that are known, against the weekly goal spread evenly (about 21 min a day).
      */

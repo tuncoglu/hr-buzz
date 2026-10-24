@@ -150,4 +150,33 @@ final class Ui {
         a.getWindow().setStatusBarColor(0xFF0E0E10);
         a.getWindow().setNavigationBarColor(0xFF0E0E10);
     }
+
+    /** The plan's steps as coloured bars sized by duration, with a caption under each. */
+    static View stepsBar(Context c, CoachLogic.Plan plan) {
+        LinearLayout col = new LinearLayout(c);
+        col.setOrientation(LinearLayout.VERTICAL);
+        LinearLayout bar = new LinearLayout(c);
+        LinearLayout labels = new LinearLayout(c);
+        for (CoachLogic.Step st : plan.steps) {
+            View seg = new View(c);
+            android.graphics.drawable.GradientDrawable d = new android.graphics.drawable.GradientDrawable();
+            d.setCornerRadius(dp(c, 5));
+            d.setColor(ZONE_COLORS[st.zoneHigh]);
+            seg.setBackground(d);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, dp(c, 10),
+                    Math.max(1, st.minutes));
+            lp.rightMargin = dp(c, 3);
+            bar.addView(seg, lp);
+            String zones = st.zoneLow == st.zoneHigh ? "Z" + st.zoneLow
+                    : "Z" + st.zoneLow + "\u2013" + st.zoneHigh;
+            TextView t = text(c, st.minutes + "\u2032 " + zones, 12, TEXT2);
+            t.setSingleLine();
+            t.setEllipsize(android.text.TextUtils.TruncateAt.END);
+            labels.addView(t, new LinearLayout.LayoutParams(0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT, Math.max(1, st.minutes)));
+        }
+        col.addView(bar);
+        col.addView(labels);
+        return col;
+    }
 }
