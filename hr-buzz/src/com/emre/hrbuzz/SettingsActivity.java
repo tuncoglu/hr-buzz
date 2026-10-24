@@ -134,7 +134,9 @@ public class SettingsActivity extends Activity {
         section(root, "Heart rate zones");
         zonesText = Ui.text(this, "", 14, Ui.TEXT);
         zonesText.setTypeface(android.graphics.Typeface.MONOSPACE);
-        card(root).addView(zonesText);
+        LinearLayout zonesCard = card(root);
+        zonesCard.addView(zonesText);
+        zonesCard.addView(gapTop(Ui.text(this, talkTestLine(), 13, Ui.TEXT2), 10));
         refreshProfile();
         // Sessions recorded before peaks were kept are read once, off the main thread.
         new Thread(() -> {
@@ -326,6 +328,44 @@ public class SettingsActivity extends Activity {
                     + "from the home screen and it fills in here.");
         }
         refreshZones();
+    }
+
+    private TextView gapTop(TextView t, int dp) {
+        t.setPadding(0, Ui.dp(this, dp), 0, 0);
+        return t;
+    }
+
+    /**
+     * What their own talk test answers say about the zones. The zones are never changed by it;
+     * it only moves where easy coached steps start to beep.
+     */
+    private String talkTestLine() {
+        long now = System.currentTimeMillis();
+        List<CoachLogic.SessionInfo> all = Coach.get(this).sessions();
+        int answered = 0;
+        for (CoachLogic.SessionInfo si : all) {
+            answered += si.talk > 0 ? 1 : 0;
+        }
+        int bpm = CoachLogic.conversationalBpm(all, now);
+        if (bpm == 0) {
+            return "Talk test: " + (answered == 0 ? "not answered yet" : "answered on " + answered
+                    + (answered == 1 ? " session" : " sessions")) + ". After three sessions in "
+                    + "which you could talk in full sentences, this shows what that says about "
+                    + "your zones.";
+        }
+        CoachLogic.Step easy = new CoachLogic.Step();
+        easy.zoneLow = 1;
+        easy.zoneHigh = 2;
+        int hrMax = Prefs.hrMax(this);
+        int ceiling = Prefs.alertAbove(this);
+        int with = CoachLogic.stepLimits(easy, hrMax, ceiling, bpm)[0];
+        int without = CoachLogic.stepLimits(easy, hrMax, ceiling)[0];
+        String line = "Talk test: you could talk in full sentences at an average of up to " + bpm
+                + " bpm (" + CoachLogic.conversationalSessions(all, now) + " sessions). ";
+        return line + (with > without
+                ? "That is above your zone 2, so easy coached steps beep above " + with
+                + " instead of " + without + ". Your zones stay as they are."
+                : "That fits your zones.");
     }
 
     private void refreshZones() {

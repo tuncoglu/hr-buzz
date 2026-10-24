@@ -637,7 +637,8 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
                 main = st;
             }
         }
-        return CoachLogic.stepLimits(main, Prefs.hrMax(this), hr.getUserThreshold());
+        return CoachLogic.stepLimits(main, Prefs.hrMax(this), hr.getUserThreshold(),
+                Coach.get(this).conversationalBpm());
     }
 
     private TextView label(String s) {

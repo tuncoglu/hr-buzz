@@ -40,6 +40,9 @@ public final class CoachTest {
         movement();
         testDue();
         debriefAsk();
+        talkEvidence();
+        todayStatus();
+        promptRules();
         client();
         if (failures > 0) {
             System.out.println(failures + " check(s) FAILED");
@@ -86,6 +89,120 @@ public final class CoachTest {
                 CoachLogic.askTargets(java.util.Arrays.asList("s1", "s2", "s3", "s1", "x9", "s99"), table));
         eq("never more than three", 3, CoachLogic.askTargets(java.util.Arrays.asList("s1", "s3", "s4",
                 "s1"), table).size());
+    }
+
+    private static CoachLogic.SessionInfo answered(int daysAgo, int avgHr, int minutes, int talk) {
+        CoachLogic.SessionInfo si = new CoachLogic.SessionInfo();
+        si.start = NOW - daysAgo * DAY;
+        si.sport = "Walking";
+        si.activeMs = minutes * 60000L;
+        si.avgHr = avgHr;
+        si.talk = talk;
+        return si;
+    }
+
+    private static void talkEvidence() throws Exception {
+        List<CoachLogic.SessionInfo> ss = new ArrayList<>();
+        ss.add(answered(1, 107, 120, 1));
+        ss.add(answered(2, 112, 40, 1));
+        eq("two answers are too few", 0, CoachLogic.conversationalBpm(ss, NOW));
+        ss.add(answered(3, 104, 60, 1));
+        eq("three full-sentence sessions: the highest average", 112, CoachLogic.conversationalBpm(ss, NOW));
+        eq("sessions it rests on", 3, CoachLogic.conversationalSessions(ss, NOW));
+        ss.add(answered(4, 150, 40, 2));
+        eq("a harder answer above does not lower it", 112, CoachLogic.conversationalBpm(ss, NOW));
+        ss.add(answered(5, 110, 40, 3));
+        eq("a hard answer below some full-sentence ones: only those under it count", 0,
+                CoachLogic.conversationalBpm(ss, NOW));
+        List<CoachLogic.SessionInfo> short5 = new ArrayList<>();
+        short5.add(answered(1, 100, 5, 1));
+        short5.add(answered(2, 101, 5, 1));
+        short5.add(answered(3, 102, 5, 1));
+        eq("sessions under 10 minutes say nothing", 0, CoachLogic.conversationalBpm(short5, NOW));
+        List<CoachLogic.SessionInfo> old = new ArrayList<>();
+        old.add(answered(100, 100, 30, 1));
+        old.add(answered(101, 101, 30, 1));
+        old.add(answered(102, 102, 30, 1));
+        eq("answers older than 90 days no longer count", 0, CoachLogic.conversationalBpm(old, NOW));
+
+        // easy steps beep a little above it, never past zone 3 or their own ceiling
+        CoachLogic.Step easy = new CoachLogic.Step();
+        easy.zoneLow = 1;
+        easy.zoneHigh = 2;
+        eq("no evidence: top of zone 2 plus 5", 124, CoachLogic.stepLimits(easy, 171, 145, 0)[0]);
+        eq("talking at 125: beeps above 130", 130, CoachLogic.stepLimits(easy, 171, 145, 125)[0]);
+        eq("never above zone 3's top (136)", 136, CoachLogic.stepLimits(easy, 171, 160, 150)[0]);
+        eq("their ceiling still wins", 128, CoachLogic.stepLimits(easy, 171, 128, 150)[0]);
+        eq("below zone 2's top changes nothing", 124, CoachLogic.stepLimits(easy, 171, 145, 100)[0]);
+        CoachLogic.Step hard = new CoachLogic.Step();
+        hard.zoneLow = 3;
+        hard.zoneHigh = 4;
+        eq("harder steps are untouched", CoachLogic.stepLimits(hard, 171, 160, 0)[0],
+                CoachLogic.stepLimits(hard, 171, 160, 125)[0]);
+
+        // what the model is told
+        ss.remove(ss.size() - 1);
+        ss.remove(ss.size() - 1);
+        Map<String, Object> b = CoachLogic.brief(settings(), ss, new ArrayList<>(),
+                new CoachLogic.Readiness(), null, new CoachLogic.Extras(), NOW, LONDON);
+        Map<String, Object> ev = Json.obj(b.get("talkTestEvidence"));
+        eq("evidence: conversational bpm", 112.0, ((Number) ev.get("conversationalBpm")).doubleValue());
+        eq("evidence: full sentence range", "104-112", Json.obj(ev.get("fullSentences")).get("avgHrRange"));
+        ok("evidence: nothing for answers never given", ev.get("fewWords") == null);
+        Map<String, Object> beep = Json.obj(Json.obj(b.get("limits")).get("stepAlertBpm"));
+        ok("the model gets where each step beeps", beep.get("topZone2") != null && beep.get("topZone5") != null);
+        ok("no evidence block without answers", CoachLogic.brief(settings(), new ArrayList<>(),
+                new ArrayList<>(), new CoachLogic.Readiness(), null, NOW, LONDON)
+                .get("talkTestEvidence") == null);
+    }
+
+    private static void todayStatus() throws Exception {
+        List<CoachLogic.SessionInfo> ss = new ArrayList<>();
+        CoachLogic.SessionInfo a = answered(0, 120, 30, 0);   // started a day-fraction ago: today
+        a.start = NOW - 3600000L;
+        a.distanceM = 4000;
+        ss.add(a);
+        CoachLogic.Plan rest = CoachLogic.restPlan("2026-10-21", "Rest.");
+        CoachLogic.Extras x = new CoachLogic.Extras();
+        Map<String, Object> b = CoachLogic.brief(settings(), ss, new ArrayList<>(),
+                new CoachLogic.Readiness(), rest, x, NOW, LONDON);
+        Map<String, Object> st = Json.obj(b.get("todayStatus"));
+        eq("a session today is listed", 1, Json.list(st.get("sessionsRecordedToday")).size());
+        eq("plan says rest", "rest day", st.get("plan"));
+        ok("told not to call it a rest day", String.valueOf(st.get("note")).contains("never tell them it is a rest day"));
+        b = CoachLogic.brief(settings(), new ArrayList<>(), new ArrayList<>(),
+                new CoachLogic.Readiness(), rest, x, NOW, LONDON);
+        st = Json.obj(b.get("todayStatus"));
+        eq("nothing recorded: empty list", 0, Json.list(st.get("sessionsRecordedToday")).size());
+        ok("no note on an untouched rest day", st.get("note") == null);
+        x.planDone = true;
+        CoachLogic.Plan run = CoachLogic.parsePlan(Json.parseObject("{\"today\":{\"title\":\"Run\","
+                + "\"sport\":\"Running\",\"steps\":[{\"name\":\"a\",\"minutes\":20,\"zoneLow\":2,"
+                + "\"zoneHigh\":2}]}}"), "2026-10-21");
+        b = CoachLogic.brief(settings(), ss, new ArrayList<>(), new CoachLogic.Readiness(), run, x,
+                NOW, LONDON);
+        eq("planned session recorded", "done", Json.obj(b.get("todayStatus")).get("plan"));
+    }
+
+    private static void promptRules() throws Exception {
+        Map<String, Object> b = CoachLogic.brief(settings(), new ArrayList<>(), new ArrayList<>(),
+                new CoachLogic.Readiness(), null, NOW, LONDON);
+        List<String[]> history = new ArrayList<>();
+        history.add(new String[]{"you", "old question", "2026-10-20", "155"});
+        history.add(new String[]{"coach", "answer", "2026-10-20", "155"});
+        history.add(new String[]{"you", "same zones", "2026-10-21", "180"});
+        history.add(new String[]{"you", "from before the stamps"});
+        String prompt = CoachLogic.askPrompt(b, history, "hello");
+        ok("turns carry their date", prompt.contains("\"date\":\"2026-10-20\""));
+        ok("a turn under other zones is marked", prompt.contains("\"zonesWereFromHrMax\":155"));
+        eq("only the two turns under the old zones are marked (not the one under today's)", 2,
+                prompt.split("zonesWereFromHrMax", -1).length - 1);
+        ok("old turns without stamps still work", prompt.contains("from before the stamps"));
+        ok("the system prompt rules are there", CoachLogic.SYSTEM.contains("talk test outranks")
+                && CoachLogic.SYSTEM.contains("stepAlertBpm") && CoachLogic.SYSTEM.contains("todayStatus"));
+        CoachLogic.SessionInfo si = answered(0, 130, 40, 0);
+        ok("the debrief is held to a phone screen", CoachLogic.debriefPrompt(b, si, null)
+                .contains("under 120 words in all"));
     }
 
     private static void testDue() {

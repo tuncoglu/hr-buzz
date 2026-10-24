@@ -259,6 +259,7 @@ public class Recorder implements HrManager.Listener {
         walkBreak = false;
         hr.setSessionRunning(true);
         hr.setSessionAlerts(plan != null);
+        conversational = plan != null ? Coach.get(appContext).conversationalBpm() : 0;
         if (!hr.isActive()) {
             hr.start();
         }
@@ -441,6 +442,9 @@ public class Recorder implements HrManager.Listener {
         }
     }
 
+    /** Their talk test says they can talk in full sentences at about this heart rate; 0: unknown. */
+    private int conversational;
+
     private void enterStep(int idx) {
         int n = plan.steps.size();
         hr.chime();
@@ -452,7 +456,8 @@ public class Recorder implements HrManager.Listener {
             return;
         }
         CoachLogic.Step st = plan.steps.get(idx);
-        int[] limits = CoachLogic.stepLimits(st, session.hrMax, hr.getUserThreshold());
+        int[] limits = CoachLogic.stepLimits(st, session.hrMax, hr.getUserThreshold(),
+                conversational);
         int current = hr.getThreshold();
         if (limits[0] < current) {
             pendingHigh = limits[0];

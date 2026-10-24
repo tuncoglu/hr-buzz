@@ -170,6 +170,8 @@ public final class CoachLogic {
         public List<HealthDay> health = new ArrayList<>();
         public List<CheckIn> checkIns = new ArrayList<>();
         public List<PlanDay> planDays = new ArrayList<>();
+        /** Today's planned session has been recorded. */
+        public boolean planDone;
     }
 
     public static final class Readiness {
@@ -612,8 +614,22 @@ public final class CoachLogic {
      * start in zone 1.
      */
     public static int[] stepLimits(Step st, int hrMax, int ceiling) {
+        return stepLimits(st, hrMax, ceiling, 0);
+    }
+
+    /**
+     * As above. {@code conversational} is a heart rate (0: none known) at which they have said
+     * they could talk in full sentences: an easy step (top zone 2) then beeps no lower than
+     * just above it, up to the top of zone 3, because their own answers say zone 2 is set too
+     * low for them. Their ceiling still wins.
+     */
+    public static int[] stepLimits(Step st, int hrMax, int ceiling, int conversational) {
         int high = st.zoneHigh >= 5 || st.zoneHigh <= 1 ? hrMax
                 : Training.zoneFloor(st.zoneHigh + 1, hrMax) - 1 + STEP_TOLERANCE;
+        if (conversational > 0 && st.zoneHigh == 2) {
+            int zone3Top = Training.zoneFloor(4, hrMax) - 1;
+            high = Math.max(high, Math.min(conversational + STEP_TOLERANCE, zone3Top));
+        }
         if (ceiling > 0) {
             high = Math.min(high, ceiling);
         }
@@ -740,7 +756,7 @@ public final class CoachLogic {
 
     public static Debrief parseDebrief(Map<String, Object> m) {
         Debrief d = new Debrief();
-        d.headline = trim(Json.str(m, "headline", ""), 600);
+        d.headline = trim(Json.str(m, "headline", ""), 500);
         for (Object o : Json.list(m.get("points"))) {
             if (o instanceof String && d.points.size() < 5) {
                 d.points.add(trim((String) o, 400));
@@ -970,6 +986,11 @@ public final class CoachLogic {
             out.put("remember", new ArrayList<Object>(s.remember));
         }
         out.put("readiness", readinessMap(r));
+        Map<String, Object> evidence = talkEvidence(sessions, now);
+        if (evidence != null) {
+            out.put("talkTestEvidence", evidence);
+        }
+        out.put("todayStatus", todayStatus(sessions, current, x.planDone, today, zone));
         List<Object> nearMax = hrMaxCheck(s, sessions, now, zone);
         if (!nearMax.isEmpty()) {
             Map<String, Object> check = Json.map("sessions", nearMax);
@@ -1006,6 +1027,42 @@ public final class CoachLogic {
             if (!Move.level(week).equals("unknown") || week[0] >= 0) {
                 out.put("movement", moveMap(week));
             }
+        }
+        return out;
+    }
+
+    /**
+     * What has already happened today, so a reply never treats a trained day as untouched:
+     * the sessions recorded today and where today's plan stands.
+     */
+    static Map<String, Object> todayStatus(List<SessionInfo> sessions, Plan current,
+                                           boolean planDone, LocalDate today, ZoneId zone) {
+        List<Object> done = new ArrayList<>();
+        for (SessionInfo si : sessions) {
+            if (!Instant.ofEpochMilli(si.start).atZone(zone).toLocalDate().equals(today)) {
+                continue;
+            }
+            Map<String, Object> o = Json.map("sport", si.sport,
+                    "minutes", (int) Math.round(si.activeMs / 60000.0));
+            if (si.distanceM > 0) {
+                o.put("km", Math.round(si.distanceM / 10) / 100.0);
+            }
+            if (si.avgHr > 0) {
+                o.put("avgHr", si.avgHr);
+            }
+            if (si.planTitle != null && !si.planTitle.isEmpty()) {
+                o.put("wasTodaysPlan", true);
+            }
+            done.add(o);
+        }
+        Map<String, Object> out = Json.map("sessionsRecordedToday", done);
+        if (current != null) {
+            out.put("plan", current.rest ? "rest day" : planDone ? "done"
+                    : done.isEmpty() ? "not started" : "not started, but they did other sessions");
+        }
+        if (!done.isEmpty() && current != null && current.rest) {
+            out.put("note", "They trained today although the plan says rest: treat today as "
+                    + "trained and never tell them it is a rest day.");
         }
         return out;
     }
@@ -1305,6 +1362,96 @@ public final class CoachLogic {
     /** Sessions this recent also carry their km splits (heart rate drift, pace by km). */
     static final int SPLIT_DAYS = 28;
 
+    /** Sessions shorter than this say little about how easy the pace was. */
+    static final long TALK_MIN_MS = 10 * 60000L;
+    /** Answers older than this no longer describe their fitness. */
+    static final long TALK_DAYS = 90;
+    /** Full-sentence answers needed before they change anything on the phone. */
+    static final int TALK_NEEDED = 3;
+
+    private static boolean talkCounts(SessionInfo si, long now) {
+        return si.talk >= 1 && si.talk < TALK.length && si.avgHr > 0
+                && si.activeMs >= TALK_MIN_MS && now - si.start < TALK_DAYS * 86400000L;
+    }
+
+    /**
+     * A heart rate at which they have said they could talk in full sentences, from their own
+     * talk test answers: the highest session average among at least {@link #TALK_NEEDED}
+     * full-sentence sessions, below every session where they could not. It is a floor: the
+     * average of a whole session sits under the effort of its hardest minutes. 0 when the
+     * answers are too few or disagree.
+     */
+    public static int conversationalBpm(List<SessionInfo> sessions, long now) {
+        int hardest = Integer.MAX_VALUE;
+        for (SessionInfo si : sessions) {
+            if (talkCounts(si, now) && si.talk > 1) {
+                hardest = Math.min(hardest, si.avgHr);
+            }
+        }
+        int best = 0;
+        int n = 0;
+        for (SessionInfo si : sessions) {
+            if (talkCounts(si, now) && si.talk == 1 && si.avgHr < hardest) {
+                best = Math.max(best, si.avgHr);
+                n++;
+            }
+        }
+        return n >= TALK_NEEDED ? best : 0;
+    }
+
+    /** How many sessions the conversational heart rate rests on (for the settings screen). */
+    public static int conversationalSessions(List<SessionInfo> sessions, long now) {
+        int bpm = conversationalBpm(sessions, now);
+        int n = 0;
+        for (SessionInfo si : sessions) {
+            if (bpm > 0 && talkCounts(si, now) && si.talk == 1 && si.avgHr <= bpm) {
+                n++;
+            }
+        }
+        return n;
+    }
+
+    /**
+     * What their talk test answers say, for the model: per answer, the range of session
+     * average heart rates, and the conversational heart rate once there is one. Null when
+     * there is nothing to say yet.
+     */
+    static Map<String, Object> talkEvidence(List<SessionInfo> sessions, long now) {
+        int[] lo = {Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE, Integer.MAX_VALUE};
+        int[] hi = new int[4];
+        int[] n = new int[4];
+        int unanswered = 0;
+        for (SessionInfo si : sessions) {
+            if (si.avgHr <= 0 || si.activeMs < TALK_MIN_MS || now - si.start >= TALK_DAYS * 86400000L) {
+                continue;
+            }
+            if (si.talk >= 1 && si.talk < TALK.length) {
+                n[si.talk]++;
+                lo[si.talk] = Math.min(lo[si.talk], si.avgHr);
+                hi[si.talk] = Math.max(hi[si.talk], si.avgHr);
+            } else {
+                unanswered++;
+            }
+        }
+        if (n[1] + n[2] + n[3] == 0) {
+            return null;
+        }
+        String[] names = {"", "fullSentences", "shortPhrases", "fewWords"};
+        Map<String, Object> out = Json.map("sessionsWithoutAnswer", unanswered);
+        for (int t = 1; t <= 3; t++) {
+            if (n[t] > 0) {
+                out.put(names[t], Json.map("sessions", n[t], "avgHrRange",
+                        lo[t] == hi[t] ? String.valueOf(lo[t]) : lo[t] + "-" + hi[t]));
+            }
+        }
+        int conv = conversationalBpm(sessions, now);
+        out.put("conversationalBpm", conv > 0 ? conv : null);
+        out.put("note", "Whole-session average heart rates, by how easily they could talk. "
+                + "conversationalBpm (when present) is a heart rate at which they could talk in "
+                + "full sentences: at least that high is easy for them, whatever the zones say.");
+        return out;
+    }
+
     /**
      * What the phone will allow, so the model plans inside it instead of being cut back after:
      * the session length {@link #guard} enforces, plus the load done so far for context.
@@ -1314,8 +1461,17 @@ public final class CoachLogic {
         double[] loads = recentLoads(sessions, now, zone);
         boolean noHistory = loads[1] < 30 && loads[0] < 30;
         int cap = sessionCap(s, noHistory);
+        int conv = conversationalBpm(sessions, now);
+        Map<String, Object> beep = new java.util.LinkedHashMap<>();
+        for (int z = 1; z <= 5; z++) {
+            Step st = new Step();
+            st.zoneLow = z;
+            st.zoneHigh = z;
+            beep.put("topZone" + z, stepLimits(st, s.hrMax, s.ceiling, conv)[0]);
+        }
         return Json.map("loadDoneLast7Days", (int) Math.round(loads[0]),
                 "maxSessionMinutes", cap,
+                "stepAlertBpm", beep,
                 "note", "The app cuts any session above this length, so plan inside it and "
                         + "make the message and the week outline agree with the minutes you "
                         + "give today. There is no weekly volume cap.");
@@ -1509,7 +1665,22 @@ public final class CoachLogic {
             + "until it is settled, plan easy days by the talk test as well as by zones. "
             + "\"talkTest\" is how easily they could speak in the main part: full sentences "
             + "is easy (zones 1-2), short phrases is moderate (zone 3), a few words is hard "
-            + "(zone 4 and up). "
+            + "(zone 4 and up). \"talkTestEvidence\" sums up their own answers by session "
+            + "average heart rate, and \"conversationalBpm\" is a heart rate at which they "
+            + "could talk in full sentences. Their zones rest on an estimated or typed hrMax, so "
+            + "the talk test outranks them: when full sentences came at a heart rate the zones "
+            + "call hard, say their zones are probably set too low, never that they trained too "
+            + "hard. For a session with no talkTest, call its intensity \"by your current "
+            + "zones\", and do not scold: there is no evidence either way. "
+            + "\"stepAlertBpm\" is where a step topping out in each zone really beeps: when you "
+            + "tell them a bpm to stay under, use those figures or the zone bands; a lower aim "
+            + "of your own is fine if you call it an aim and say the alert sits higher. "
+            + "\"todayStatus\" lists what they already did today: with a session recorded, "
+            + "today is not a rest day and not untouched, whatever the plan says; and do not "
+            + "end every reply with today's plan, mention it only when it bears on the question. "
+            + "In the chat history, \"date\" says when a turn was written and "
+            + "\"zonesWereFromHrMax\" marks a turn written under a different hrMax, whose bpm "
+            + "figures are out of date. "
             + "\"progress\" is worked out on the phone from the km splits: use its numbers for "
             + "trends rather than doing sums over the sessions. More metres per heartbeat, or "
             + "a faster \"runPaceAtSameHr\", means fitter; \"decouplingPct\" under 5 means "
@@ -1562,9 +1733,19 @@ public final class CoachLogic {
 
     public static String askPrompt(Map<String, Object> brief, List<String[]> history,
                                    String message) {
+        Object nowMax = Json.obj(brief.get("athlete")).get("hrMax");
         List<Object> h = new ArrayList<>();
         for (String[] turn : history) {
-            h.add(Json.map("from", turn[0], "text", turn[1]));
+            Map<String, Object> t = Json.map("from", turn[0], "text", turn[1]);
+            // Turns carry the date they were written and the hrMax their numbers came from.
+            if (turn.length > 2 && !turn[2].isEmpty()) {
+                t.put("date", turn[2]);
+            }
+            if (turn.length > 3 && turn[3].matches("\\d{2,3}") && nowMax != null
+                    && !turn[3].equals(String.valueOf(nowMax))) {
+                t.put("zonesWereFromHrMax", Integer.parseInt(turn[3]));
+            }
+            h.add(t);
         }
         return "Task: answer their message.\n"
                 + "Their data as JSON:\n" + Json.write(brief) + "\n\n"
@@ -1617,19 +1798,23 @@ public final class CoachLogic {
             }
             session.put("kmSplits", km);
         }
-        return "Task: debrief the session they just finished. Take your time: look at how the "
-                + "heart rate was spent, not just the averages.\n"
+        return "Task: debrief the session they just finished. Look at how the heart rate was "
+                + "spent, not just the averages, but write for a phone screen read right after "
+                + "a run: under 120 words in all, plain and specific. The thinking is yours; "
+                + "the text carries only what matters.\n"
                 + "The session as JSON:\n" + Json.write(session) + "\n"
                 + (plan != null && !plan.rest ? "It was planned as JSON:\n"
                 + Json.write(planToMap(plan).get("today")) + "\n" : "")
                 + "Their history as JSON:\n" + Json.write(brief) + "\n\n"
-                + "Answer with JSON: {\"headline\":\"Two or three sentences: how it went against "
-                + "what it was meant to be, with a concrete comparison to their history if there "
-                + "is one.\",\"points\":[\"Up to 4 points, each one specific and backed by a "
-                + "number: where the time sat by zone, whether pace and heart rate held steady "
-                + "or drifted across the km splits, how they recovered in any breaks, how this "
-                + "fits the week's load and the days since a hard session.\"],\"next\":\"One or "
-                + "two sentences on what comes next and why.\",\"ask\":null}\n"
+                + "Answer with JSON: {\"headline\":\"One or two sentences (under 40 words): how it "
+                + "went against what it was meant to be, with one concrete comparison to their "
+                + "history if there is one.\",\"points\":[\"Up to 2 points, under 25 words "
+                + "each, specific and backed by a number: where the time sat by zone, whether "
+                + "pace and heart rate held or drifted, how they recovered in any breaks.\"],"
+                + "\"next\":\"One sentence (under 30 words) on what comes next and why. If it would "
+                + "tell them to ease off because sessions were hard by zones alone, and those "
+                + "sessions have no talkTest, say instead what their answer would change.\","
+                + "\"ask\":null}\n"
                 + "\"ask\" is for one thing only: when your verdict on how hard some of their "
                 + "sessions were rests on heart rate zones alone, because those sessions in their "
                 + "history have no \"talkTest\", ask whether they could talk during them. Put it "

@@ -407,6 +407,7 @@ public class SummaryActivity extends Activity {
             }
         }
         if (d != null && !d.headline.isEmpty()) {
+            askBlock(d);        // a question to answer comes before the verdict
             TextView h = Ui.text(this, d.headline, 17, Ui.TEXT);
             h.setPadding(0, Ui.dp(this, 6), 0, 0);
             h.setLineSpacing(0, 1.15f);
@@ -421,7 +422,6 @@ public class SummaryActivity extends Activity {
                 n.setPadding(0, Ui.dp(this, 8), 0, 0);
                 coachBox.addView(n);
             }
-            askBlock(d);
             if (debriefing) {
                 coachBox.addView(padTop(Ui.text(this, "Updating with your answer…", 13,
                         Ui.TEXT2)));

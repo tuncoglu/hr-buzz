@@ -212,6 +212,7 @@ public class Coach {
     private CoachLogic.Extras extras() {
         CoachLogic.Extras x = new CoachLogic.Extras();
         x.move = HealthSync.forCoach(appContext);
+        x.planDone = todayDone();
         x.health = HealthSync.daysForCoach(appContext);
         JSONObject ci = checkIns();
         for (java.util.Iterator<String> it = ci.keys(); it.hasNext(); ) {
@@ -683,7 +684,10 @@ public class Coach {
             JSONArray a = new JSONArray(prefs.getString("coachChat", "[]"));
             for (int i = 0; i < a.length(); i++) {
                 JSONObject o = a.getJSONObject(i);
-                out.add(new String[]{o.getString("from"), o.getString("text")});
+                // date and hrMax: when it was written, and the zones its numbers came from
+                out.add(new String[]{o.getString("from"), o.getString("text"),
+                        o.optString("date", ""),
+                        o.has("hrMax") ? String.valueOf(o.optInt("hrMax")) : ""});
             }
         } catch (JSONException ignored) {
         }
@@ -692,11 +696,18 @@ public class Coach {
 
     private synchronized void addChat(String from, String text) {
         List<String[]> all = chat();
-        all.add(new String[]{from, text});
+        all.add(new String[]{from, text, today(), String.valueOf(Prefs.hrMax(appContext))});
         JSONArray a = new JSONArray();
         for (String[] t : all.subList(Math.max(0, all.size() - MAX_CHAT), all.size())) {
             try {
-                a.put(new JSONObject().put("from", t[0]).put("text", t[1]));
+                JSONObject turn = new JSONObject().put("from", t[0]).put("text", t[1]);
+                if (!t[2].isEmpty()) {
+                    turn.put("date", t[2]);
+                }
+                if (!t[3].isEmpty()) {
+                    turn.put("hrMax", Integer.parseInt(t[3]));
+                }
+                a.put(turn);
             } catch (JSONException ignored) {
             }
         }
@@ -788,6 +799,14 @@ public class Coach {
 
     List<CoachLogic.Test> tests() {
         return Prefs.fitnessTests(appContext);
+    }
+
+    /**
+     * A heart rate at which their talk test answers say they can talk in full sentences, or 0:
+     * easy steps do not beep below it. See {@link CoachLogic#conversationalBpm}.
+     */
+    public int conversationalBpm() {
+        return CoachLogic.conversationalBpm(sessions(), System.currentTimeMillis());
     }
 
     public CoachLogic.Readiness readiness() {
