@@ -1640,7 +1640,9 @@ public final class CoachLogic {
                 if (p[1] < SHORTEST_MS) {
                     continue;
                 }
-                Map<String, Object> m = Json.map("type", p[0] == 1 ? "walk break" : "main effort",
+                boolean jogMarks = !"Running".equals(si.sport);
+                Map<String, Object> m = Json.map("type", p[0] == 1
+                        ? (jogMarks ? "jogging" : "walk break") : (jogMarks ? "walking" : "main effort"),
                         "minutes", Math.round(p[1] / 600.0) / 100.0);
                 if (p[4] > 0) {
                     m.put("km", Math.round(p[4] / 10.0) / 100.0);
@@ -1878,10 +1880,12 @@ public final class CoachLogic {
             + "left out of its minutes and zone figures (heart rate is only recorded while "
             + "moving): read the \"movingStretches\" and the bpm at the start and end of each "
             + "break as interval work with recovery, and do not call a run with walking breaks "
-            + "continuous. If a session has \"parts\", they pressed Walk break: heart rate and "
+            + "continuous. If a session has \"parts\", they marked stretches with a button: in a "
+            + "running session Walk break (parts \"walk break\" and \"main effort\"), in a walking "
+            + "session Jog (parts \"jogging\" and \"walking\"). Heart rate and "
             + "GPS ran all the way through, so its minutes, distance, pace and zone minutes "
-            + "include the walk breaks; judge the main efforts by their own heart rate and pace "
-            + "and the breaks by how far bpm fell. "
+            + "include every part; judge the main efforts, or the jogging, by their own heart "
+            + "rate and pace and the walk breaks by how far bpm fell. "
             + "A session's zone minutes use the hrMax in force when it was recorded; "
             + "\"zonesFromHrMax\" marks a session whose hrMax differs from today's, so judge "
             + "its intensity by its average heart rate against today's zones rather than by "

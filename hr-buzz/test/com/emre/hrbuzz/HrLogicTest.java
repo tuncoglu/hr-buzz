@@ -17,6 +17,8 @@ public final class HrLogicTest {
         lowLimit();
         confirm();
         lowTiming();
+        calm();
+        cues();
         if (failures > 0) {
             System.out.println(failures + " check(s) FAILED");
             System.exit(1);
@@ -170,6 +172,112 @@ public final class HrLogicTest {
         eq("high 2", HrLogic.Alarm.NONE, a.evaluate(160, t += 1000));
         eq("high 3: alarm", HrLogic.Alarm.OVER, a.evaluate(160, t += 1000));
         eq("high repeats after 5 s", HrLogic.Alarm.OVER, a.evaluate(160, t += 5000));
+    }
+
+    /** Feeds {@code bpm} once a second for seconds [from, to], returns the first second per event. */
+    private static int[] feed(HrLogic.Alarm a, int from, int to, int bpm, long t0) {
+        int[] first = new int[6];
+        java.util.Arrays.fill(first, -1);
+        for (int s = from; s <= to; s++) {
+            int ev = a.evaluate(bpm, t0 + s * 1000L);
+            if (first[ev] < 0) {
+                first[ev] = s;
+            }
+        }
+        return first;
+    }
+
+    private static void calm() {
+        long t0 = 1_000_000L;
+        // immediate mode is what it always was: the alarm on the third reading over
+        HrLogic.Alarm plain = new HrLogic.Alarm(130, 3, 5000, 3);
+        eq("immediate: third reading", 2, feed(plain, 0, 10, 135, t0)[HrLogic.Alarm.OVER]);
+
+        HrLogic.Alarm a = new HrLogic.Alarm(130, 3, 5000, 3);
+        a.setCalm(true, 10000, 30000, 10, 10000);
+        int[] first = feed(a, 0, 29, 135, t0);
+        eq("calm: a nudge after 10 s over", 10, first[HrLogic.Alarm.NUDGE]);
+        eq("calm: no alarm yet at 29 s", -1, first[HrLogic.Alarm.OVER]);
+        int[] more = feed(a, 30, 45, 135, t0);
+        eq("calm: the alarm after 30 s", 30, more[HrLogic.Alarm.OVER]);
+        eq("calm: the nudge is given once", -1, more[HrLogic.Alarm.NUDGE]);
+        ok("calm: repeats every 10 s, not 5", a.evaluate(135, t0 + 44_000L) == HrLogic.Alarm.NONE
+                && a.evaluate(135, t0 + 40_000L) == HrLogic.Alarm.NONE);
+        eq("calm: back once 3 under the limit", HrLogic.Alarm.BACK, a.evaluate(126, t0 + 50_000L));
+
+        // far over the limit is not worth waiting for
+        HrLogic.Alarm far = new HrLogic.Alarm(130, 3, 5000, 3);
+        far.setCalm(true, 10000, 30000, 10, 10000);
+        eq("calm: 15 over sounds on the third reading", 2, feed(far, 0, 10, 145, t0)[HrLogic.Alarm.OVER]);
+
+        // a short dip back under does not restart the timers
+        HrLogic.Alarm dip = new HrLogic.Alarm(130, 3, 5000, 3);
+        dip.setCalm(true, 10000, 30000, 10, 10000);
+        feed(dip, 0, 7, 135, t0);
+        feed(dip, 8, 9, 128, t0);
+        eq("calm: a 2 s dip counts as still over", 12, feed(dip, 10, 20, 135, t0)[HrLogic.Alarm.NUDGE]);
+
+        // really coming back down starts it over
+        HrLogic.Alarm back = new HrLogic.Alarm(130, 3, 5000, 3);
+        back.setCalm(true, 10000, 30000, 10, 10000);
+        feed(back, 0, 5, 135, t0);
+        feed(back, 6, 14, 120, t0);
+        eq("calm: after 9 s under the clock starts again", 25, feed(back, 15, 40, 135, t0)[HrLogic.Alarm.NUDGE]);
+
+        // switching it off puts the old behaviour back
+        HrLogic.Alarm off = new HrLogic.Alarm(130, 3, 5000, 3);
+        off.setCalm(true, 10000, 30000, 10, 10000);
+        off.setCalm(false, 0, 0, 0, 0);
+        eq("calm off: third reading again", 2, feed(off, 0, 10, 135, t0)[HrLogic.Alarm.OVER]);
+    }
+
+    private static void cues() {
+        long[] one = HrLogic.stepPattern(1);
+        eq("step 1: wait, long, gap, one short", 4, one.length);
+        eq("the long buzz comes first", 350, (int) one[1]);
+        eq("one short buzz", 90, (int) one[3]);
+        long[] three = HrLogic.stepPattern(3);
+        eq("step 3: three short buzzes", 8, three.length);
+        eq("they end on a buzz", 90, (int) three[three.length - 1]);
+        eq("short ones are told apart by a gap", 130, (int) three[4]);
+        eq("capped at five", HrLogic.stepPattern(5).length, HrLogic.stepPattern(9).length);
+        eq("step 0 is step 1", one.length, HrLogic.stepPattern(0).length);
+        ok("a pattern always starts with no wait", three[0] == 0 && HrLogic.DONE_PATTERN[0] == 0
+                && HrLogic.TICK_PATTERN[0] == 0);
+
+        // auto-pause: 8 slow seconds in a row pauses, 3 quick ones resume
+        HrLogic.AutoPause ap = new HrLogic.AutoPause();
+        int at = -1;
+        for (int i = 0; i < 12 && at < 0; i++) {
+            if (ap.onSpeed(false, 0.2) == HrLogic.AutoPause.PAUSE) {
+                at = i;
+            }
+        }
+        eq("pauses on the 8th still second", 7, at);
+        eq("a fix without speed is ignored", HrLogic.AutoPause.NONE, ap.onSpeed(true, -1));
+        eq("one quick second is not enough", HrLogic.AutoPause.NONE, ap.onSpeed(true, 1.6));
+        eq("a slow one starts the count again", HrLogic.AutoPause.NONE, ap.onSpeed(true, 0.4));
+        ap.onSpeed(true, 1.6);
+        ap.onSpeed(true, 1.6);
+        eq("the third in a row resumes", HrLogic.AutoPause.RESUME, ap.onSpeed(true, 1.6));
+        HrLogic.AutoPause walk = new HrLogic.AutoPause();
+        int fired = 0;
+        for (int i = 0; i < 60; i++) {
+            fired += walk.onSpeed(false, 0.9) == HrLogic.AutoPause.PAUSE ? 1 : 0;
+        }
+        eq("a slow stroll (0.9 m/s) never pauses", 0, fired);
+        HrLogic.AutoPause stop = new HrLogic.AutoPause();
+        for (int i = 0; i < 6; i++) {
+            stop.onSpeed(false, 0.1);
+        }
+        stop.onSpeed(false, 1.4);       // a step forward
+        int again = -1;
+        for (int i = 0; i < 12 && again < 0; i++) {
+            if (stop.onSpeed(false, 0.1) == HrLogic.AutoPause.PAUSE) {
+                again = i;
+            }
+        }
+        eq("a moving second restarts the still count", 7, again);
     }
 
     private static void eq(String what, int expected, int actual) {

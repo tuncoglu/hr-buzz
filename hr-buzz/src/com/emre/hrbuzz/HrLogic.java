@@ -75,6 +75,86 @@ public final class HrLogic {
         return m;
     }
 
+    // ----------------------------------------------------------------- buzz cues
+
+    /**
+     * The buzz that tells a workout step has started, for when nothing is spoken: one long
+     * buzz, then one short buzz for each step number (up to five), so "step 3" is felt.
+     */
+    public static long[] stepPattern(int step) {
+        int n = Math.max(1, Math.min(5, step));
+        // {wait, long, gap, short, gap, short, ...}: ends on a buzz
+        long[] p = new long[2 + 2 * n];
+        p[1] = 350;
+        p[2] = 250;
+        for (int i = 0; i < n; i++) {
+            p[3 + 2 * i] = 90;
+            if (i < n - 1) {
+                p[4 + 2 * i] = 130;
+            }
+        }
+        return p;
+    }
+
+    /** Three long buzzes: the workout is complete. */
+    public static final long[] DONE_PATTERN = {0, 400, 200, 400, 200, 400};
+
+    /** Two short buzzes: something was announced (a km, a pause, a resume). */
+    public static final long[] TICK_PATTERN = {0, 60, 90, 60};
+
+    /**
+     * Notices that someone has stopped moving (waiting at a crossing) from GPS speed, once a
+     * second, so a session pauses by itself and starts again when they do.
+     */
+    public static final class AutoPause {
+        public static final int NONE = 0;
+        public static final int PAUSE = 1;
+        public static final int RESUME = 2;
+
+        /** Slower than this is standing still: a stroll is about 1 m/s. */
+        static final double STILL_MS = 0.5;
+        /** Faster than this is moving again. */
+        static final double MOVING_MS = 1.0;
+        static final int STILL_FIXES = 8;
+        static final int MOVING_FIXES = 3;
+
+        private int still;
+        private int moving;
+
+        /**
+         * @param paused whether the session is paused (by this detector)
+         * @param speed  GPS speed in m/s, negative when the fix has none
+         */
+        public int onSpeed(boolean paused, double speed) {
+            if (speed < 0) {
+                return NONE;
+            }
+            if (!paused) {
+                moving = 0;
+                if (speed >= STILL_MS) {
+                    still = 0;
+                } else if (++still >= STILL_FIXES) {
+                    still = 0;
+                    return PAUSE;
+                }
+            } else {
+                still = 0;
+                if (speed <= MOVING_MS) {
+                    moving = 0;
+                } else if (++moving >= MOVING_FIXES) {
+                    moving = 0;
+                    return RESUME;
+                }
+            }
+            return NONE;
+        }
+
+        public void reset() {
+            still = 0;
+            moving = 0;
+        }
+    }
+
     /** True when no reading has arrived for {@code timeoutMs} (strap fell off or out of range). */
     public static boolean isStale(long lastSampleAt, long now, long timeoutMs) {
         return now - lastSampleAt >= timeoutMs;
@@ -106,6 +186,11 @@ public final class HrLogic {
         public static final int UNDER = 3;
         /** Not an evaluate() result: the strap link is down, so no limit is being watched. */
         public static final int LOST = 4;
+        /** Calm mode only: over the limit for a while, a gentle first warning (no beep). */
+        public static final int NUDGE = 5;
+
+        /** A dip back under the limit shorter than this does not restart the calm timers. */
+        static final long OVER_GRACE_MS = 5000;
 
         private int threshold;
         private int low;                  // 0 = no lower limit
@@ -114,6 +199,16 @@ public final class HrLogic {
         private final int confirm;
         private int lowConfirm;
         private long lowReAlertMs;
+
+        // calm mode: a gentle nudge after a while over the limit, the alarm after longer
+        private boolean calm;
+        private long nudgeAfterMs;
+        private long alertAfterMs;
+        private int farOver;
+        private long calmRepeatMs;
+        private long overSince;           // 0 = not over
+        private long lastOverAt;
+        private boolean nudged;
 
         private boolean above;
         private boolean below;
@@ -143,6 +238,24 @@ public final class HrLogic {
         public void setLowTiming(int confirm, long reAlertMs) {
             lowConfirm = Math.max(1, confirm);
             lowReAlertMs = reAlertMs;
+        }
+
+        /**
+         * Calm mode, for coached sessions and anyone tired of beeps: staying over the limit is
+         * answered first by a {@link #NUDGE} after {@code nudgeAfterMs}, and by the alarm
+         * itself only after {@code alertAfterMs} (or at once when {@code farOver} bpm past the
+         * limit), then repeating every {@code repeatMs} instead of the usual interval.
+         * Dips back under the limit of a few seconds do not restart the timers.
+         */
+        public void setCalm(boolean on, long nudgeAfterMs, long alertAfterMs, int farOver,
+                            long repeatMs) {
+            calm = on;
+            this.nudgeAfterMs = nudgeAfterMs;
+            this.alertAfterMs = alertAfterMs;
+            this.farOver = farOver;
+            calmRepeatMs = repeatMs;
+            overSince = 0;
+            nudged = false;
         }
 
         /** Changes the limit without losing the latched state. */
@@ -184,6 +297,8 @@ public final class HrLogic {
             lowArmed = false;
             overCount = 0;
             underCount = 0;
+            overSince = 0;
+            nudged = false;
             lastAlertAt = Long.MIN_VALUE;
         }
 
@@ -197,7 +312,7 @@ public final class HrLogic {
                     above = false;
                     return BACK;
                 }
-                return repeat(now, OVER, reAlertMs);
+                return repeat(now, OVER, calm ? calmRepeatMs : reAlertMs);
             }
             if (below) {
                 if (bpm > threshold) {
@@ -211,6 +326,9 @@ public final class HrLogic {
             }
             if (bpm > threshold) {
                 underCount = 0;
+                if (calm) {
+                    return calmOver(bpm, now);
+                }
                 if (++overCount < confirm) {
                     return NONE;
                 }
@@ -220,6 +338,10 @@ public final class HrLogic {
                 return OVER;
             }
             overCount = 0;
+            if (calm && overSince != 0 && now - lastOverAt > OVER_GRACE_MS) {
+                overSince = 0;              // really back under, not a dip
+                nudged = false;
+            }
             if (low > 0) {
                 if (!lowArmed) {
                     lowArmed = bpm >= low;
@@ -234,6 +356,30 @@ public final class HrLogic {
                 } else {
                     underCount = 0;
                 }
+            }
+            return NONE;
+        }
+
+        private int calmOver(int bpm, long now) {
+            if (overSince == 0) {
+                overSince = now;
+            }
+            lastOverAt = now;
+            if (++overCount < confirm) {
+                return NONE;
+            }
+            long over = now - overSince;
+            if (over >= alertAfterMs || bpm > threshold + farOver) {
+                above = true;
+                lastAlertAt = now;
+                overCount = 0;
+                overSince = 0;
+                nudged = false;
+                return OVER;
+            }
+            if (!nudged && over >= nudgeAfterMs) {
+                nudged = true;
+                return NUDGE;
             }
             return NONE;
         }

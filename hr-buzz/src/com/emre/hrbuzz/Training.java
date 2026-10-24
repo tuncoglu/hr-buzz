@@ -251,6 +251,34 @@ public final class Training {
         return String.format(Locale.ROOT, "%.2f", metres / 1000);
     }
 
+    /**
+     * What is said at an announcement while a coached workout runs: where they are in it
+     * and how the heart rate sits against the step's target, which is what they need to
+     * know; the clock and the pace are on the screen.
+     *
+     * @param step      1-based number of the running step
+     * @param status    -1 below the step's target, 0 inside it, 1 above it
+     */
+    public static String planAnnouncement(int step, int steps, long remainingMs, int bpm,
+                                          int status, boolean gps, double distanceM) {
+        StringBuilder sb = new StringBuilder("Step ").append(step).append(" of ").append(steps)
+                .append(". ");
+        if (remainingMs < 60000) {
+            sb.append("Under a minute left. ");
+        } else {
+            long minutes = (remainingMs + 59999) / 60000;
+            sb.append(minutes).append(minutes == 1 ? " minute left. " : " minutes left. ");
+        }
+        if (gps && distanceM > 0) {
+            sb.append(String.format(Locale.ROOT, "%.2f kilometres. ", distanceM / 1000));
+        }
+        if (bpm > 0) {
+            sb.append("Heart rate ").append(bpm).append(status == 0 ? ", in target."
+                    : status > 0 ? ", above target. Ease off." : ", below target. Pick it up.");
+        }
+        return sb.toString().trim();
+    }
+
     /** What voice guidance says: "12 minutes. 2.31 kilometres. Pace 6 05. Heart rate 142, zone 3." */
     public static String announcement(long activeMs, double distanceM, double speed,
                                       boolean gps, int bpm, int zone) {

@@ -76,6 +76,11 @@ public class Recorder implements HrManager.Listener {
     private int state = IDLE;
     /** In a walk break: samples are flagged, nothing else about recording changes. */
     private boolean walkBreak;
+    /** How steps and announcements reach them: see {@link Prefs#cue}. Read at the start. */
+    private int cue = Prefs.CUE_BOTH;
+    private final HrLogic.AutoPause autoPause = new HrLogic.AutoPause();
+    /** The pause was made by standing still, so moving again ends it; one they chose does not. */
+    private boolean autoPaused;
     private long lastSavedId = -1;
     private SessionStore.Summary session;
     private Training.Stats stats;
@@ -258,6 +263,9 @@ public class Recorder implements HrManager.Listener {
         hr.addListener(this);
         walkBreak = false;
         hr.setSessionRunning(true);
+        cue = Prefs.cue(appContext);
+        autoPaused = false;
+        autoPause.reset();
         hr.setSessionAlerts(plan != null);
         conversational = plan != null ? Coach.get(appContext).conversationalBpm() : 0;
         if (!hr.isActive()) {
@@ -266,7 +274,9 @@ public class Recorder implements HrManager.Listener {
         if (session.gps) {
             startGps();
         }
-        startVoice();
+        if (cue != Prefs.CUE_BUZZ) {
+            startVoice();           // buzz only: no speech, so no audio focus is ever taken
+        }
         state = RUNNING;
         main.removeCallbacks(tick);
         main.post(tick);
@@ -278,17 +288,34 @@ public class Recorder implements HrManager.Listener {
             return;
         }
         state = PAUSED;
+        autoPaused = false;
         write("-");
         stats.pause();
         anchor = null;
         walkBreak = false;      // a pause ends a walk break, here and in HrManager
         hr.setSessionRunning(false);
         say("Paused.");
+        acknowledge();
         notifyListeners();
     }
 
     public boolean isWalkBreak() {
         return walkBreak;
+    }
+
+    /**
+     * In a walk the button marks the jogging stretches instead of walk breaks: the same part
+     * of the session file, told apart by the sport.
+     */
+    public boolean isJogMarker() {
+        return session != null && !"Running".equals(session.sport);
+    }
+
+    /** With nothing spoken, a short double buzz says that something happened. */
+    private void acknowledge() {
+        if (cue == Prefs.CUE_BUZZ) {
+            hr.buzz(HrLogic.TICK_PATTERN);
+        }
     }
 
     /**
@@ -301,8 +328,13 @@ public class Recorder implements HrManager.Listener {
             return;
         }
         walkBreak = !walkBreak;
-        hr.setWalkBreak(walkBreak);
-        say(walkBreak ? "Walk break." : "Back to it.");
+        boolean jogging = isJogMarker();
+        if (!jogging) {
+            hr.setWalkBreak(walkBreak);     // a walk break lowers the low alert; a jog does not
+        }
+        say(jogging ? (walkBreak ? "Jogging." : "Back to walking.")
+                : walkBreak ? "Walk break." : "Back to it.");
+        acknowledge();
         notifyListeners();
     }
 
@@ -311,8 +343,10 @@ public class Recorder implements HrManager.Listener {
             return;
         }
         state = RUNNING;
+        autoPaused = false;
         hr.setSessionRunning(true);
         say("Resumed.");
+        acknowledge();
         notifyListeners();
     }
 
@@ -352,6 +386,7 @@ public class Recorder implements HrManager.Listener {
                 Prefs.of(appContext).edit().putInt("hrMaxSeen", stats.peakHr)
                         .putLong("hrMaxSeenAt", id).apply();
             }
+            acknowledge();
             say("Session saved. " + Training.announcement(stats.activeMs, stats.distanceM,
                     stats.avgSpeed(), session.gps, stats.avgHr(), 0)
                     .replace("Heart rate", "Average heart rate")
@@ -448,6 +483,9 @@ public class Recorder implements HrManager.Listener {
     private void enterStep(int idx) {
         int n = plan.steps.size();
         hr.chime();
+        if (cue != Prefs.CUE_VOICE) {
+            hr.buzz(idx >= n ? HrLogic.DONE_PATTERN : HrLogic.stepPattern(idx + 1));
+        }
         tightenAtMs = -1;
         if (idx >= n) {
             hr.clearSessionLimits();
@@ -522,6 +560,7 @@ public class Recorder implements HrManager.Listener {
 
     private void onFix(Location fix) {
         lastFix = fix;
+        watchForStillness(fix);
         if (state != RUNNING || !fix.hasAccuracy() || fix.getAccuracy() > MAX_ACCURACY_M) {
             return;
         }
@@ -541,6 +580,28 @@ public class Recorder implements HrManager.Listener {
         if (d >= noise) {
             gpsDistance += d;
             anchor = fix;
+        }
+    }
+
+    /**
+     * Auto-pause (when turned on): standing still at a crossing pauses the session, so time
+     * and pace are not dragged down, and moving again resumes it. A pause they made stays.
+     */
+    private void watchForStillness(Location fix) {
+        if (session == null || !session.gps || state == IDLE || !Prefs.autoPause(appContext)
+                || !fix.hasAccuracy() || fix.getAccuracy() > MAX_ACCURACY_M) {
+            return;
+        }
+        boolean paused = state == PAUSED;
+        if (paused && !autoPaused) {
+            return;
+        }
+        int act = autoPause.onSpeed(paused, fix.hasSpeed() ? fix.getSpeed() : -1);
+        if (act == HrLogic.AutoPause.PAUSE) {
+            pause();
+            autoPaused = true;
+        } else if (act == HrLogic.AutoPause.RESUME) {
+            resume();
         }
     }
 
@@ -643,9 +704,30 @@ public class Recorder implements HrManager.Listener {
         }
         if (due) {
             int bpm = currentBpm();
-            say(Training.announcement(stats.activeMs, stats.distanceM, stats.speed(),
-                    session.gps, bpm, Training.zone(bpm, session.hrMax)));
+            if (cue == Prefs.CUE_BUZZ) {
+                hr.buzz(HrLogic.TICK_PATTERN);
+                return;
+            }
+            String text = planAnnouncement(bpm);
+            say(text != null ? text : Training.announcement(stats.activeMs, stats.distanceM,
+                    stats.speed(), session.gps, bpm, Training.zone(bpm, session.hrMax)));
         }
+    }
+
+    /** During a coached workout: the step, the time left and the heart rate against target. */
+    private String planAnnouncement(int bpm) {
+        if (plan == null) {
+            return null;
+        }
+        int idx = CoachLogic.stepAt(plan.steps, stats.activeMs);
+        if (idx >= plan.steps.size()) {
+            return null;
+        }
+        int[] band = CoachLogic.targetBand(plan.steps.get(idx), session.hrMax);
+        int status = bpm <= 0 ? 0 : bpm < band[0] ? -1 : bpm > band[1] ? 1 : 0;
+        return Training.planAnnouncement(idx + 1, plan.steps.size(),
+                CoachLogic.stepStart(plan.steps, idx + 1) - stats.activeMs, bpm, status,
+                session.gps, stats.distanceM);
     }
 
     private void say(String text) {

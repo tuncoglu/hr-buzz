@@ -323,12 +323,15 @@ public class TrainingActivity extends Activity implements Recorder.Listener, HrM
         boolean paused = recorder.getState() == Recorder.PAUSED;
 
         boolean walking = recorder.isWalkBreak();
+        boolean jog = recorder.isJogMarker();       // in a walk the button marks jogging
         sportView.setText(paused ? s.sport + " \u00b7 paused"
-                : walking ? s.sport + " \u00b7 walk break" : s.sport);
-        // Only for running, and not while paused: a walk break keeps recording.
-        walkButton.setVisibility("Running".equals(s.sport) ? View.VISIBLE : View.GONE);
+                : walking ? s.sport + (jog ? " \u00b7 jogging" : " \u00b7 walk break") : s.sport);
+        // Running and walking only, and not while paused: both keep recording.
+        walkButton.setVisibility("Running".equals(s.sport) || "Walking".equals(s.sport)
+                ? View.VISIBLE : View.GONE);
         walkButton.setEnabled(!paused);
-        walkButton.setText(walking ? "Back to running" : "Walk break");
+        walkButton.setText(jog ? (walking ? "Back to walking" : "Jog")
+                : walking ? "Back to running" : "Walk break");
         StringBuilder top = new StringBuilder(recorder.gpsStatus());
         int battery = hr.getBattery();
         if (battery >= 0 && battery <= 20) {
@@ -351,9 +354,19 @@ public class TrainingActivity extends Activity implements Recorder.Listener, HrM
             zoneView.setText(hr.isConnected() ? "Waiting for heart rate" : "Strap not connected");
         }
         strip.set(bpm, s.hrMax);
+        // The range the running step asks for, outlined on the strip.
+        CoachLogic.Plan plan = recorder.getPlan();
+        int stepNow = recorder.getStepIndex();
+        if (plan != null && stepNow >= 0 && stepNow < plan.steps.size()) {
+            int[] band = CoachLogic.targetBand(plan.steps.get(stepNow), s.hrMax);
+            strip.setBand(band[0], band[1]);
+        } else {
+            strip.setBand(0, 0);
+        }
 
         if (walking && !over) {
-            statusView.setText("Walk break \u2014 still recording, low alert off");
+            statusView.setText(jog ? "Jogging \u2014 marked for the coach"
+                    : "Walk break \u2014 still recording, low alert off");
         } else if (over) {
             statusView.setText("Over " + hr.getThreshold() + " \u2014 ease off");
         } else if (under) {

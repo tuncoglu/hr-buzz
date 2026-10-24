@@ -30,7 +30,9 @@ import java.util.function.IntConsumer;
 public class SettingsActivity extends Activity {
 
     private static final int[] VOICE_VALUES = {Prefs.VOICE_OFF, Prefs.VOICE_PER_KM, 1, 5, 10};
-    private static final String[] VOICE_LABELS = {"Off", "Every km", "1 min", "5 min", "10 min"};
+    private static final String[] VOICE_LABELS = {"Off", "Each km", "1 min", "5 min", "10 min"};
+    private static final String[] CUE_LABELS = {"Voice + buzz", "Voice", "Buzz only"};
+    private static final int[] CUE_VALUES = {Prefs.CUE_BOTH, Prefs.CUE_VOICE, Prefs.CUE_BUZZ};
 
     private SharedPreferences prefs;
     private HrManager hr;
@@ -166,10 +168,30 @@ public class SettingsActivity extends Activity {
             chip.setSelected(VOICE_VALUES[i] == current);
             voice.addView(chip);
         }
-        HorizontalScrollView voiceScroll = new HorizontalScrollView(this);
-        voiceScroll.setHorizontalScrollBarEnabled(false);
-        voiceScroll.addView(voice);
-        voiceCard.addView(voiceScroll);
+        Ui.fillRow(voice);              // all five in view: a scrolling row hid the last
+        voiceCard.addView(voice, rowLp());
+
+        TextView cuesLabel = Ui.text(this, "Workout steps and announcements", 15, Ui.TEXT);
+        cuesLabel.setPadding(0, Ui.dp(this, 16), 0, 0);
+        voiceCard.addView(cuesLabel);
+        LinearLayout cues = new LinearLayout(this);
+        int cueNow = Prefs.cue(this);
+        for (int i = 0; i < CUE_VALUES.length; i++) {
+            final int index = i;
+            TextView chip = Ui.chip(this, CUE_LABELS[i]);
+            chip.setSelected(CUE_VALUES[i] == cueNow);
+            chip.setOnClickListener(v -> {
+                prefs.edit().putInt("cue", CUE_VALUES[index]).apply();
+                Ui.select(cues, index);
+            });
+            cues.addView(chip);
+        }
+        Ui.fillRow(cues);
+        voiceCard.addView(cues, rowLp());
+        hint(voiceCard, "Buzz only says nothing aloud, so music and audiobooks are never "
+                + "interrupted: a workout step is one long buzz and then one short buzz for "
+                + "each step number, three long ones at the end, and two short ones for an "
+                + "announcement. Alerts always buzz.");
 
         // ---- move minutes
         section(root, "Activity");
@@ -198,6 +220,10 @@ public class SettingsActivity extends Activity {
         LinearLayout screen = card(root);
         toggle(screen, "Keep screen on", "keepScreenOn", Prefs.keepScreenOn(this));
         toggle(screen, "Hold to pause or finish", "secureButtons", Prefs.secureButtons(this));
+        toggle(screen, "Pause when standing still", "autoPause", Prefs.autoPause(this));
+        hint(screen, "With GPS, a stop of about 8 seconds (a crossing) pauses the session, and "
+                + "moving again resumes it, so time and pace are not dragged down. A pause "
+                + "you made yourself stays until you resume.");
         hint(screen, "The training screen also shows over the lock screen, so a press of the "
                 + "power button is enough to check it.");
 
@@ -205,6 +231,23 @@ public class SettingsActivity extends Activity {
         section(root, "Alarm");
         LinearLayout alarm = card(root);
         hint(alarm, "Alerts play on the alarm volume, so they are heard even with media muted.");
+        LinearLayout style = new LinearLayout(this);
+        String[] styles = {"Calm", "Immediate"};
+        for (int i = 0; i < styles.length; i++) {
+            final boolean calm = i == 0;
+            TextView chip = Ui.chip(this, styles[i]);
+            chip.setSelected(calm == Prefs.calmAlerts(this));
+            chip.setOnClickListener(v -> {
+                hr.setCalmAlerts(calm);
+                Ui.select(style, calm ? 0 : 1);
+            });
+            style.addView(chip);
+        }
+        Ui.fillRow(style);
+        alarm.addView(style, rowLp());
+        hint(alarm, "Calm: staying over the limit gets a short buzz after 10 s, the beep after "
+                + "30 s, and then every 10 s; 10 bpm over sounds at once. Immediate: the beep "
+                + "after three readings over, every 5 s.");
         Button test = button(alarm, "Play test alert");
         test.setOnClickListener(v -> hr.testAlarm());
 
@@ -328,6 +371,14 @@ public class SettingsActivity extends Activity {
                     + "from the home screen and it fills in here.");
         }
         refreshZones();
+    }
+
+    private LinearLayout.LayoutParams rowLp() {
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
+        lp.topMargin = Ui.dp(this, 10);
+        return lp;
     }
 
     private TextView gapTop(TextView t, int dp) {

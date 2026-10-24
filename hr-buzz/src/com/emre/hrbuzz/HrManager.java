@@ -60,6 +60,11 @@ public class HrManager {
     private static final int HYSTERESIS = 3;
     /** Minimum gap between repeated alarms while still over the limit. */
     private static final long RE_ALERT_MS = 5000;
+    /** Calm alerts: a buzz after this long over the limit, the alarm after the next, and a far-over reading at once. */
+    private static final long NUDGE_AFTER_MS = 10000;
+    private static final long CALM_ALERT_AFTER_MS = 30000;
+    private static final int FAR_OVER_BPM = 10;
+    private static final long CALM_REPEAT_MS = 10000;
     /** Readings in a row past a limit before it sounds: one artifact spike is not enough. */
     private static final int CONFIRM = 3;
     /** The lower limit waits for 10 readings and repeats every 30 s: a nudge, not an alarm. */
@@ -86,7 +91,7 @@ public class HrManager {
         }
 
         /**
-         * An alarm just sounded: {@link HrLogic.Alarm#OVER}, UNDER, LOST (bpm -1) or BACK
+         * An alarm just sounded: {@link HrLogic.Alarm#OVER}, UNDER, LOST (bpm -1), BACK or NUDGE (calm mode: a buzz only)
          * (back under a limit, or heart rate back after a lost signal).
          */
         default void onAlarm(int event, int bpm) {
@@ -200,6 +205,7 @@ public class HrManager {
         this.threshold = prefs.getInt("threshold", Training.defaultAlert(Prefs.hrMax(context)));
         this.alarm = new HrLogic.Alarm(threshold, HYSTERESIS, RE_ALERT_MS, CONFIRM);
         this.alarm.setLowTiming(LOW_CONFIRM, LOW_RE_ALERT_MS);
+        setCalmAlerts(prefs.getBoolean("calmAlerts", true));
         this.alarmOn = prefs.getBoolean("alarmOn", true);
         this.deviceName = prefs.getString("deviceName", null);
     }
@@ -263,6 +269,15 @@ public class HrManager {
         if (lowActive) {
             alarm.setLow(getUserLowLimit());
         }
+    }
+
+    /**
+     * Calm: staying over the limit gets a short buzz first, the beep only later (at once when
+     * well over). Immediate: the beep after three readings over. Saved.
+     */
+    public void setCalmAlerts(boolean calm) {
+        prefs.edit().putBoolean("calmAlerts", calm).apply();
+        alarm.setCalm(calm, NUDGE_AFTER_MS, CALM_ALERT_AFTER_MS, FAR_OVER_BPM, CALM_REPEAT_MS);
     }
 
     public boolean isAlarmOn() {
@@ -839,13 +854,34 @@ public class HrManager {
                 tone.startTone(ToneGenerator.TONE_CDMA_LOW_L, 400);
             } else if (event == HrLogic.Alarm.LOST) {
                 tone.startTone(ToneGenerator.TONE_SUP_INTERCEPT, 1000);
-            } else {
+            } else if (event != HrLogic.Alarm.NUDGE) {
                 tone.startTone(ToneGenerator.TONE_PROP_ACK, 120);
-            }
+            }       // a nudge is a buzz only: it must not cut into music or a book
         } catch (RuntimeException e) {
             Log.w(TAG, "tone failed", e);
         }
 
+        long[] pattern = event == HrLogic.Alarm.OVER
+                ? new long[]{0, 220, 120, 220}
+                : event == HrLogic.Alarm.UNDER
+                ? new long[]{0, 120, 100, 120, 100, 120}
+                : event == HrLogic.Alarm.LOST
+                ? new long[]{0, 700}
+                : event == HrLogic.Alarm.NUDGE
+                ? new long[]{0, 160}
+                : new long[]{0, 70};
+        vibrate(pattern, event != HrLogic.Alarm.BACK);
+    }
+
+    /**
+     * A buzz pattern as a cue (a workout step, an announcement, a pause): the way to tell them
+     * something without speaking, so music and audiobooks are left alone.
+     */
+    public void buzz(long[] pattern) {
+        vibrate(pattern, true);
+    }
+
+    private void vibrate(long[] pattern, boolean urgent) {
         try {
             if (vibrator == null) {
                 if (Build.VERSION.SDK_INT >= 31) {
@@ -860,17 +896,9 @@ public class HrManager {
                 }
             }
             if (vibrator != null && vibrator.hasVibrator()) {
-                long[] pattern = event == HrLogic.Alarm.OVER
-                        ? new long[]{0, 220, 120, 220}
-                        : event == HrLogic.Alarm.UNDER
-                        ? new long[]{0, 120, 100, 120, 100, 120}
-                        : event == HrLogic.Alarm.LOST
-                        ? new long[]{0, 700}
-                        : new long[]{0, 70};
                 VibrationEffect effect = VibrationEffect.createWaveform(pattern, -1);
                 // Untagged vibrations are scaled by the media haptics setting (measured at
                 // 51% on a Pixel); alarm usage gets the alarm strength instead.
-                boolean urgent = event != HrLogic.Alarm.BACK;
                 if (Build.VERSION.SDK_INT >= 33) {
                     vibrator.vibrate(effect, VibrationAttributes.createForUsage(urgent
                             ? VibrationAttributes.USAGE_ALARM

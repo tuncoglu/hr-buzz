@@ -187,6 +187,25 @@ final class Prefs {
         return of(c).getInt("voice", VOICE_OFF);
     }
 
+    /** How coached steps and announcements reach them: spoken and buzzed, spoken only, buzzed only. */
+    static final int CUE_BOTH = 0;
+    static final int CUE_VOICE = 1;
+    static final int CUE_BUZZ = 2;
+
+    static int cue(Context c) {
+        return of(c).getInt("cue", CUE_BOTH);
+    }
+
+    /** Calm alerts (a nudge, then the beep) rather than the beep at once. On unless turned off. */
+    static boolean calmAlerts(Context c) {
+        return of(c).getBoolean("calmAlerts", true);
+    }
+
+    /** Pause by itself when standing still. Off unless turned on. */
+    static boolean autoPause(Context c) {
+        return of(c).getBoolean("autoPause", false);
+    }
+
     static boolean keepScreenOn(Context c) {
         return of(c).getBoolean("keepScreenOn", true);
     }

@@ -183,7 +183,10 @@ public class SummaryActivity extends Activity {
             for (long[] part : s.parts) {
                 breaks += part[0] == 1 ? 1 : 0;
             }
-            card.addView(Ui.text(this, breaks + " walk break" + (breaks == 1 ? "" : "s") + " \u00b7 "
+            boolean jogs = !"Running".equals(s.sport);     // in a walk the button marks jogging
+            String what = jogs ? " jogging stretch" + (breaks == 1 ? "" : "es")
+                    : " walk break" + (breaks == 1 ? "" : "s");
+            card.addView(Ui.text(this, breaks + what + " \u00b7 "
                     + Training.duration(walked[0]) + " \u00b7 "
                     + Training.km(walked[1]) + " km, included above", 14, Ui.TEXT2));
         }

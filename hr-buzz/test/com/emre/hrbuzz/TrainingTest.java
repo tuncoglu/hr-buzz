@@ -23,11 +23,27 @@ public final class TrainingTest {
         format();
         export();
         profileValues();
+        planAnnouncement();
         if (failures > 0) {
             System.out.println(failures + " check(s) FAILED");
             System.exit(1);
         }
         System.out.println("all checks passed");
+    }
+
+    private static void planAnnouncement() {
+        eq("in target", "Step 2 of 3. 14 minutes left. 3.20 kilometres. Heart rate 118, in target.",
+                Training.planAnnouncement(2, 3, 13 * 60000L + 20000L, 118, 0, true, 3200));
+        eq("above: ease off", "Step 1 of 3. 5 minutes left. Heart rate 131, above target. Ease off.",
+                Training.planAnnouncement(1, 3, 5 * 60000L, 131, 1, false, 0));
+        eq("below: pick it up", "Step 3 of 3. 1 minute left. Heart rate 95, below target. Pick it up.",
+                Training.planAnnouncement(3, 3, 59999 + 1, 95, -1, false, 0));
+        eq("the last seconds", "Step 2 of 2. Under a minute left. Heart rate 120, in target.",
+                Training.planAnnouncement(2, 2, 45000, 120, 0, false, 0));
+        eq("no heart rate: just where they are", "Step 1 of 4. 10 minutes left.",
+                Training.planAnnouncement(1, 4, 10 * 60000L, -1, 0, false, 0));
+        eq("no distance yet is not announced", "Step 1 of 4. 10 minutes left.",
+                Training.planAnnouncement(1, 4, 10 * 60000L, -1, 0, true, 0));
     }
 
     private static void zones() {
