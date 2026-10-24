@@ -386,7 +386,7 @@ public class TrainingActivity extends Activity implements Recorder.Listener, HrM
 
     private String alarmSummary() {
         StringBuilder sb = new StringBuilder();
-        if (hr.isAlarmOn()) {
+        if (hr.alertsOn()) {
             int low = hr.getLowLimit();
             sb.append(low > 0 ? "Alerts " + low + "\u2013" + hr.getThreshold()
                     : "Alert above " + hr.getThreshold());

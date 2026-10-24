@@ -258,6 +258,7 @@ public class Recorder implements HrManager.Listener {
         hr.addListener(this);
         walkBreak = false;
         hr.setSessionRunning(true);
+        hr.setSessionAlerts(plan != null);
         if (!hr.isActive()) {
             hr.start();
         }
@@ -328,6 +329,7 @@ public class Recorder implements HrManager.Listener {
         main.removeCallbacks(tick);
         hr.removeListener(this);
         hr.setSessionRunning(false);
+        hr.setSessionAlerts(false);
         hr.clearSessionLimits();
         stopGps();
         closeWriter();

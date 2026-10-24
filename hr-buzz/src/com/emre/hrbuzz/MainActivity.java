@@ -406,7 +406,9 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
             coachCard.addView(stepsBar(plan), buttonLp(12));
             int[] lim = mainLimits(plan);
             coachCard.addView(gap(Ui.text(this, "Alerts set for you: beep above " + lim[0]
-                    + (lim[1] > 0 ? ", below " + lim[1] : ""), 13, 0xFFC8C8CE), 8));
+                    + (lim[1] > 0 ? ", below " + lim[1] : "")
+                    + (hr.isAlarmOn() ? "" : ". Your alarm switch is off; alerts turn on for "
+                    + "this session only"), 13, 0xFFC8C8CE), 8));
             if (waiting != null) {
                 coachCard.addView(gap(Ui.text(this, "Not started yet. Tap the button below to "
                         + "follow it: alerts and spoken steps only run in a planned session.",

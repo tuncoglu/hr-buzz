@@ -136,6 +136,8 @@ public class HrManager {
     private int battery = -1;
     private boolean contact = true;
     private boolean alarmOn;
+    /** A coached session needs its alerts whatever the switch says; never saved. */
+    private boolean sessionAlerts;
     private boolean walkBreak;
     private String deviceName;
     private boolean lowActive;
@@ -156,7 +158,7 @@ public class HrManager {
                 updateWakeLock();
                 return;
             }
-            if (alarmOn && HrLogic.alertDue(lastLostAlertAt, now, RE_ALERT_MS)) {
+            if (alertsOn() && HrLogic.alertDue(lastLostAlertAt, now, RE_ALERT_MS)) {
                 lastLostAlertAt = now;
                 lostAlerted = true;
                 alarm(HrLogic.Alarm.LOST);
@@ -265,6 +267,19 @@ public class HrManager {
 
     public boolean isAlarmOn() {
         return alarmOn;
+    }
+
+    /**
+     * Whether alerts sound right now: the person's switch, or a coached session, which runs on
+     * the step limits it announced. The saved switch is left as it was.
+     */
+    public boolean alertsOn() {
+        return alarmOn || sessionAlerts;
+    }
+
+    /** True while a coached session runs: alerts sound even with the switch off. */
+    public void setSessionAlerts(boolean value) {
+        sessionAlerts = value;
     }
 
     /** Turns the over-the-limit sound off without touching recording or the strap link. */
@@ -472,7 +487,7 @@ public class HrManager {
         lostWatching = false;
         main.removeCallbacks(lostWatch);
         updateWakeLock();
-        if (lostAlerted && alarmOn) {
+        if (lostAlerted && alertsOn()) {
             alarm(HrLogic.Alarm.BACK);
             for (Listener l : listeners) {
                 l.onAlarm(HrLogic.Alarm.BACK, bpm);
@@ -776,7 +791,7 @@ public class HrManager {
         }
 
         final int event = alarm.evaluate(heartRate, System.currentTimeMillis());
-        if (event != HrLogic.Alarm.NONE && alarmOn) {
+        if (event != HrLogic.Alarm.NONE && alertsOn()) {
             alarm(event);
             for (Listener l : listeners) {
                 l.onAlarm(event, heartRate);

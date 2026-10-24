@@ -235,7 +235,7 @@ public class LiveService extends Service implements HrManager.Listener, Recorder
     }
 
     private String alertText() {
-        return hr.isAlarmOn() ? "Alert above " + hr.getThreshold() + " bpm" : "Alert off";
+        return hr.alertsOn() ? "Alert above " + hr.getThreshold() + " bpm" : "Alert off";
     }
 
     private void refresh() {
