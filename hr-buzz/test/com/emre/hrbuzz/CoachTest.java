@@ -44,6 +44,7 @@ public final class CoachTest {
         todayStatus();
         promptRules();
         phase3();
+        phase5();
         client();
         if (failures > 0) {
             System.out.println(failures + " check(s) FAILED");
@@ -324,6 +325,80 @@ public final class CoachTest {
         ok("default is the reasoning mode", slow.contains("\"enabled\"") && slow.contains("reasoning_effort"));
         ok("fast mode: reasoning off", fast.contains("\"disabled\"") && !fast.contains("reasoning_effort"));
         ok("fast mode still asks for JSON", fast.contains("json_object") && fast.contains("\"max_tokens\":100"));
+    }
+
+    private static void phase5() throws Exception {
+        // how each step went
+        CoachLogic.Plan plan = CoachLogic.parsePlan(Json.parseObject("{\"today\":{\"title\":\"Easy\","
+                + "\"sport\":\"Walking\",\"steps\":["
+                + "{\"name\":\"Warm-up\",\"minutes\":5,\"zoneLow\":1,\"zoneHigh\":1},"
+                + "{\"name\":\"Steady\",\"minutes\":20,\"zoneLow\":2,\"zoneHigh\":2}]}}"), "2026-10-21");
+        CoachLogic.StepTracker tr = new CoachLogic.StepTracker(plan, 171);
+        eq("a result per step", 2, tr.results.size());
+        eq("planned time", 300000L, tr.results.get(0).plannedMs);
+        // zone 2 of 171 is 103-119 bpm
+        eq("target low", 103, tr.results.get(1).low);
+        eq("target high", 119, tr.results.get(1).high);
+        for (int i = 0; i < 60; i++) {
+            tr.add(1, 1000, 100);       // below
+        }
+        for (int i = 0; i < 120; i++) {
+            tr.add(1, 1000, 110);       // in
+        }
+        for (int i = 0; i < 20; i++) {
+            tr.add(1, 1000, 125);       // above
+        }
+        for (int i = 0; i < 10; i++) {
+            tr.add(1, 1000, -1);        // no heart rate: time, but not timed
+        }
+        CoachLogic.StepResult r = tr.results.get(1);
+        eq("time includes the gaps", 210000L, r.ms);
+        eq("timed time does not", 200000L, r.timedMs);
+        eq("in target", 60, r.inPct());
+        eq("below", 30, r.belowPct());
+        eq("above", 10, r.abovePct());
+        eq("average over the timed part (108.5)", 109, r.avgHr());
+        eq("the other step is untouched", 0L, tr.results.get(0).ms);
+        eq("too little timed time: no share", -1, tr.results.get(0).inPct());
+        tr.add(7, 1000, 100);
+        tr.add(-1, 1000, 100);
+        tr.add(0, 0, 100);
+        eq("an index out of range or no time adds nothing", 0L, tr.results.get(0).ms);
+
+        // the debrief is told how the steps went
+        CoachLogic.SessionInfo si = trip("Walking", 0, 3, 25);
+        si.stepResults = tr.results;
+        Map<String, Object> b = CoachLogic.brief(settings(), new ArrayList<>(), new ArrayList<>(),
+                new CoachLogic.Readiness(), null, NOW, LONDON);
+        String prompt = CoachLogic.debriefPrompt(b, si, null);
+        ok("steps against the plan are in the prompt", prompt.contains("stepsAgainstPlan")
+                && prompt.contains("\"percentInTarget\":60") && prompt.contains("\"targetBpm\":\"103-119\""));
+        ok("a step that never started is left out", !prompt.contains("Warm-up"));
+
+        // load against a usual session
+        List<CoachLogic.SessionInfo> others = new ArrayList<>();
+        for (int i = 1; i <= 4; i++) {
+            CoachLogic.SessionInfo o = trip("Running", i, 5, 40);
+            o.trimp = 100 + i * 10;       // 110, 120, 130, 140: median 125
+            others.add(o);
+        }
+        eq("a harder session than usual", 120, CoachLogic.loadVsUsual(150, 1L, others, NOW));
+        eq("an easier one", 40, CoachLogic.loadVsUsual(50, 1L, others, NOW));
+        // without the 110 session the others are 120, 130, 140: the usual is 130
+        eq("the session itself is not part of 'usual'", 100,
+                CoachLogic.loadVsUsual(130, others.get(0).start, others, NOW));
+        eq("too few to compare", -1, CoachLogic.loadVsUsual(150, 1L, others.subList(0, 2), NOW));
+        CoachLogic.SessionInfo shortOne = trip("Running", 1, 1, 5);
+        shortOne.trimp = 300;
+        List<CoachLogic.SessionInfo> withShort = new ArrayList<>(others.subList(0, 2));
+        withShort.add(shortOne);
+        eq("sessions under 10 minutes do not count", -1, CoachLogic.loadVsUsual(150, 1L, withShort, NOW));
+        CoachLogic.SessionInfo old = trip("Running", 40, 5, 40);
+        old.trimp = 500;
+        List<CoachLogic.SessionInfo> aged = new ArrayList<>(others.subList(0, 2));
+        aged.add(old);
+        eq("older than 4 weeks do not count", -1, CoachLogic.loadVsUsual(150, 1L, aged, NOW));
+        eq("no load, nothing to compare", -1, CoachLogic.loadVsUsual(0, 1L, others, NOW));
     }
 
     private static void testDue() {

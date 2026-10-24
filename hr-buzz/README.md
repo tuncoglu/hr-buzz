@@ -20,7 +20,7 @@ What Beat 3.5.13 does, and where it is here:
 | Session summary: duration, HR avg/max, calories, distance, pace avg/max | Same, plus training load |
 | HR and pace graphs, map | HR graph over zone bands, pace graph, route drawn to scale and coloured by zone (no map tiles: that would need the network) |
 | How do you feel + training notes | Same |
-| Latest sessions | Home screen list, newest first |
+| Latest sessions | Home screen list, newest first, a week at a time with each week's km, time and sessions; coached sessions are tagged |
 | Fitness Test (OwnIndex) | Fitness test: 5 min lying still → resting HR, HRV (RMSSD) and a VO2max estimate, with history |
 | HR sensor with battery | Strap name + battery %, remembered strap |
 | Sync to Polar Flow | **Not done.** I couldn't find any way for a third-party app to upload to Flow. Export TCX/GPX instead (Strava, Garmin Connect, TrainingPeaks, Runalyze…) |
@@ -53,6 +53,7 @@ An LLM coach built to take as little effort as possible. It talks first, and you
 
 - **Today's plan on the home screen.** "Easy run, 35 min", one line on why, its steps as zone-coloured bars, and the alerts it will set. **Start this run** sets everything up; **Not today / Shorter / Harder** re-plan in one tap. Rest days say so.
 - **Guided workouts, offline.** Each step sets that step's alert limits for the session (never above your own "alert above" ceiling), chimes, and is spoken aloud, even with voice guidance off. The training screen shows the step, time left, the target band and % in target. The network is never needed mid-run.
+- **Plan vs actual** on the summary of a coached session: each step's time done against planned, and how its heart rate split below, inside and above the step's target range. The debrief is given the same figures. The summary also puts a session's load against your usual one (the median of the last 4 weeks) in plain words.
 - **Debrief** on the summary right after Finish: two or three lines with one concrete comparison to your history, and what's next. Older sessions and ones under 5 minutes get it on request, so browsing and false starts cost nothing.
 - **Ask.** Suggestion chips that fit the day (before a run, after it, a rest day, a hard week), typing or speech. "Why this plan?" is read back from the plan with no request, and a plain question is answered without the reasoning pass (about 2 s instead of 10-20); a message that may change training still gets it. Answers that change today come back as an updated plan with **Start now** and **Undo**. "I can do 5 days now" updates the settings.
 - **Morning notification** at your chosen time with today's plan and a Start button (a JobScheduler job, so it waits for a network and survives reboots). Sundays open with a one-line recap.

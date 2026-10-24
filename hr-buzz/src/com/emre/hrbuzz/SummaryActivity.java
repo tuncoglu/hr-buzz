@@ -201,12 +201,19 @@ public class SummaryActivity extends Activity {
             fillCoach();
         }
 
+        // ---- how each step went against the plan
+        stepsCard(root);
+
         // ---- what it trained
         LinearLayout effort = card(root);
         effort.addView(Ui.bold(Ui.text(this, Training.effort(s.zoneMs), 19, Ui.TEXT)));
-        effort.addView(Ui.text(this, "Training load " + Math.round(s.trimp) + " \u00b7 "
-                + Training.loadLabel(s.trimp) + "  (Edwards TRIMP: minutes in each zone \u00d7 "
-                + "zone number)", 13, Ui.TEXT2));
+        int vsUsual = CoachLogic.loadVsUsual(s.trimp, s.id, Coach.get(this).sessions(),
+                System.currentTimeMillis());
+        effort.addView(Ui.text(this, "Load " + Math.round(s.trimp) + " \u00b7 "
+                + (vsUsual >= 0 ? vsUsual + "% of your usual session"
+                : Training.loadLabel(s.trimp)), 14, Ui.TEXT2));
+        effort.addView(padTop(Ui.text(this, "Load adds up the minutes in each zone times the "
+                + "zone number.", 12, Ui.TEXT3)));
 
         // ---- zones
         section(root, "Heart rate zones (HRmax " + s.hrMax + ")");
@@ -292,6 +299,77 @@ public class SummaryActivity extends Activity {
                 .show());
 
         setContentView(scroll);
+    }
+
+    // ------------------------------------------------------------ plan vs actual
+
+    /** The coached workout step by step: time done against planned, and where the heart rate sat. */
+    private void stepsCard(LinearLayout root) {
+        if (summary.stepResults.isEmpty()) {
+            return;
+        }
+        section(root, "Plan vs actual");
+        LinearLayout c = card(root);
+        boolean first = true;
+        for (CoachLogic.StepResult r : summary.stepResults) {
+            LinearLayout head = new LinearLayout(this);
+            head.setPadding(0, first ? 0 : Ui.dp(this, 16), 0, 0);
+            first = false;
+            String zones = r.zoneLow == r.zoneHigh ? "zone " + r.zoneLow
+                    : "zones " + r.zoneLow + "\u2013" + r.zoneHigh;
+            head.addView(Ui.bold(Ui.text(this, r.name, 16, Ui.TEXT)),
+                    new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+            head.addView(Ui.text(this, r.ms < 10000 ? "not reached" : Training.duration(r.ms)
+                    + " of " + Training.duration(r.plannedMs), 14,
+                    r.ms < 10000 ? Ui.TEXT3 : Ui.TEXT2));
+            c.addView(head);
+            if (r.ms < 10000) {
+                continue;
+            }
+            if (r.inPct() < 0) {
+                c.addView(Ui.text(this, zones + " \u00b7 no heart rate in this step", 13, Ui.TEXT3));
+                continue;
+            }
+            c.addView(shareBar(r));
+            StringBuilder t = new StringBuilder();
+            if (r.belowPct() > 0) {
+                t.append(r.belowPct()).append("% below \u00b7 ");
+            }
+            t.append(r.inPct()).append("% in target");
+            if (r.abovePct() > 0) {
+                t.append(" \u00b7 ").append(r.abovePct()).append("% above");
+            }
+            c.addView(Ui.text(this, t.toString(), 14, Ui.TEXT));
+            c.addView(Ui.text(this, "Average " + r.avgHr() + " bpm \u00b7 " + zones + ", target "
+                    + r.low + "\u2013" + r.high, 13, Ui.TEXT2));
+        }
+    }
+
+    /** Below, inside and above the target, side by side in proportion to the time. */
+    private View shareBar(CoachLogic.StepResult r) {
+        LinearLayout bar = new LinearLayout(this);
+        long[] parts = {r.belowMs, r.inMs(), r.aboveMs};
+        int[] colors = {0xFF4F8EF7, 0xFF34C759, 0xFFFFC400};
+        for (int i = 0; i < 3; i++) {
+            if (parts[i] <= 0) {
+                continue;
+            }
+            View seg = new View(this);
+            android.graphics.drawable.GradientDrawable d = new android.graphics.drawable.GradientDrawable();
+            d.setCornerRadius(Ui.dp(this, 4));
+            d.setColor(colors[i]);
+            seg.setBackground(d);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, Ui.dp(this, 10),
+                    parts[i]);
+            lp.rightMargin = Ui.dp(this, 2);
+            bar.addView(seg, lp);
+        }
+        LinearLayout.LayoutParams blp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        blp.topMargin = Ui.dp(this, 8);
+        blp.bottomMargin = Ui.dp(this, 8);
+        bar.setLayoutParams(blp);
+        return bar;
     }
 
     // ------------------------------------------------------------ how was it

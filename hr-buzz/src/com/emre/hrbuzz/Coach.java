@@ -817,6 +817,7 @@ public class Coach {
         si.pauses = s.pauses;
         si.splits = s.splits;
         si.parts = s.parts;
+        si.stepResults = s.stepResults;
         si.talk = s.talk;
         si.hrMax = s.hrMax;
         if (!s.coachNote.isEmpty()) {

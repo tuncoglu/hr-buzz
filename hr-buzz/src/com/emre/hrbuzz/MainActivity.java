@@ -964,9 +964,28 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
         List<SessionStore.Summary> all = SessionStore.list(this);
         Ui.show(noSessions, all.isEmpty());
         SimpleDateFormat when = new SimpleDateFormat("EEE d MMM, HH:mm", Locale.getDefault());
+        java.time.ZoneId zone = java.time.ZoneId.systemDefault();
+        long now = System.currentTimeMillis();
+        // totals per week, so each week can open with what it added up to
+        java.util.Map<Long, long[]> weeks = new java.util.HashMap<>();
+        for (SessionStore.Summary s : all) {
+            if (!s.recording) {
+                long[] w = weeks.computeIfAbsent(Training.weekStartDay(s.id, zone),
+                        k -> new long[3]);
+                w[0]++;
+                w[1] += s.activeMs;
+                w[2] += s.gps ? (long) s.distanceM : 0;
+            }
+        }
+        long shownWeek = Long.MIN_VALUE;
         for (SessionStore.Summary s : all) {
             if (s.recording) {
                 continue;
+            }
+            long week = Training.weekStartDay(s.id, zone);
+            if (week != shownWeek) {
+                shownWeek = week;
+                sessionsList.addView(weekHeader(Training.weekLabel(week, now, zone), weeks.get(week)));
             }
             LinearLayout row = new LinearLayout(this);
             row.setOrientation(LinearLayout.HORIZONTAL);
@@ -982,6 +1001,10 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
             left.setOrientation(LinearLayout.VERTICAL);
             left.addView(Ui.bold(Ui.text(this, s.sport, 17, Ui.TEXT)));
             left.addView(Ui.text(this, when.format(new Date(s.id)), 13, Ui.TEXT2));
+            if (!s.planTitle.isEmpty()) {
+                left.addView(Ui.text(this, "Coached" + (s.targetPct >= 0
+                        ? " \u00b7 " + s.targetPct + "% in target" : ""), 12, 0xFF4F8EF7));
+            }
             row.addView(left, new LinearLayout.LayoutParams(0,
                     ViewGroup.LayoutParams.WRAP_CONTENT, 1));
 
@@ -1004,6 +1027,19 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
                     .putExtra(SummaryActivity.EXTRA_ID, id)));
             sessionsList.addView(row, lp);
         }
+    }
+
+    /** A week's name on the left, what it added up to on the right: km, time, sessions. */
+    private View weekHeader(String name, long[] total) {
+        LinearLayout h = new LinearLayout(this);
+        h.setGravity(Gravity.CENTER_VERTICAL);
+        h.setPadding(0, Ui.dp(this, 16), 0, 0);
+        TextView left = label(name.toUpperCase(Locale.getDefault()));
+        h.addView(left, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1));
+        h.addView(Ui.text(this, (total[2] > 0 ? Training.km(total[2]) + " km \u00b7 " : "")
+                + Training.duration(total[1]).replaceFirst(":\\d\\d$", "") + " \u00b7 " + total[0]
+                + (total[0] == 1 ? " session" : " sessions"), 13, Ui.TEXT2));
+        return h;
     }
 
     private void showRecorder() {

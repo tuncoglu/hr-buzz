@@ -24,11 +24,26 @@ public final class TrainingTest {
         export();
         profileValues();
         planAnnouncement();
+        weeks();
         if (failures > 0) {
             System.out.println(failures + " check(s) FAILED");
             System.exit(1);
         }
         System.out.println("all checks passed");
+    }
+
+    private static void weeks() {
+        java.time.ZoneId london = java.time.ZoneId.of("Europe/London");
+        long wed = java.time.ZonedDateTime.of(2026, 10, 21, 10, 0, 0, 0, london).toInstant().toEpochMilli();
+        long mon = java.time.ZonedDateTime.of(2026, 10, 19, 6, 0, 0, 0, london).toInstant().toEpochMilli();
+        long sun = java.time.ZonedDateTime.of(2026, 10, 18, 23, 30, 0, 0, london).toInstant().toEpochMilli();
+        long sat = java.time.ZonedDateTime.of(2026, 10, 3, 9, 0, 0, 0, london).toInstant().toEpochMilli();
+        eq("Monday morning is this week", Training.weekStartDay(wed, london), Training.weekStartDay(mon, london));
+        ok("Sunday night is the week before", Training.weekStartDay(sun, london) < Training.weekStartDay(mon, london));
+        eq("this week", "This week", Training.weekLabel(Training.weekStartDay(mon, london), wed, london));
+        eq("last week", "Last week", Training.weekLabel(Training.weekStartDay(sun, london), wed, london));
+        eq("an older week is named by its Monday", "Week of 28 Sep",
+                Training.weekLabel(Training.weekStartDay(sat, london), wed, london));
     }
 
     private static void planAnnouncement() {

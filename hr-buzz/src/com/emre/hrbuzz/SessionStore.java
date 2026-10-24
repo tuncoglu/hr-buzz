@@ -78,6 +78,8 @@ final class SessionStore {
         String planTitle = "";
         /** Share of heart-rate time inside the plan's zones, or -1. */
         int targetPct = -1;
+        /** How each step of the coached workout went (empty for a free session). */
+        List<CoachLogic.StepResult> stepResults = new ArrayList<>();
         /** The coach's debrief as JSON, or "". */
         String coachNote = "";
         /** Brought in from a file (e.g. a Polar Flow export) rather than recorded here. */
@@ -149,6 +151,17 @@ final class SessionStore {
             o.put("pauses", longRows(pauses));
             o.put("parts", longRows(parts));
             o.put("pausesKnown", pausesKnown);
+            if (!stepResults.isEmpty()) {
+                JSONArray sr = new JSONArray();
+                for (CoachLogic.StepResult r : stepResults) {
+                    sr.put(new JSONObject().put("name", r.name).put("zoneLow", r.zoneLow)
+                            .put("zoneHigh", r.zoneHigh).put("low", r.low).put("high", r.high)
+                            .put("plannedMs", r.plannedMs).put("ms", r.ms)
+                            .put("timedMs", r.timedMs).put("belowMs", r.belowMs)
+                            .put("aboveMs", r.aboveMs).put("bpmMs", r.bpmMs));
+                }
+                o.put("stepResults", sr);
+            }
             return o;
         }
 
@@ -214,6 +227,23 @@ final class SessionStore {
                 // Saved before the flag: an older session re-saved before its backfill has
                 // the keys but no moving stretch, which any session with time always has.
                 s.pausesKnown = o.has("pauses") && (s.activeMs == 0 || !s.segments.isEmpty());
+            }
+            JSONArray sr = o.optJSONArray("stepResults");
+            for (int i = 0; sr != null && i < sr.length(); i++) {
+                JSONObject j = sr.getJSONObject(i);
+                CoachLogic.StepResult r = new CoachLogic.StepResult();
+                r.name = j.optString("name", "");
+                r.zoneLow = j.optInt("zoneLow");
+                r.zoneHigh = j.optInt("zoneHigh");
+                r.low = j.optInt("low");
+                r.high = j.optInt("high");
+                r.plannedMs = j.optLong("plannedMs");
+                r.ms = j.optLong("ms");
+                r.timedMs = j.optLong("timedMs");
+                r.belowMs = j.optLong("belowMs");
+                r.aboveMs = j.optLong("aboveMs");
+                r.bpmMs = j.optLong("bpmMs");
+                s.stepResults.add(r);
             }
             JSONArray z = o.optJSONArray("zoneMs");
             for (int i = 0; z != null && i < Math.min(6, z.length()); i++) {

@@ -78,6 +78,8 @@ public class Recorder implements HrManager.Listener {
     private boolean walkBreak;
     /** How steps and announcements reach them: see {@link Prefs#cue}. Read at the start. */
     private int cue = Prefs.CUE_BOTH;
+    /** How each step of the coached workout goes, saved with the session. */
+    private CoachLogic.StepTracker tracker;
     private final HrLogic.AutoPause autoPause = new HrLogic.AutoPause();
     /** The pause was made by standing still, so moving again ends it; one they chose does not. */
     private boolean autoPaused;
@@ -246,6 +248,7 @@ public class Recorder implements HrManager.Listener {
         session.age = p.age;
         session.weight = (int) p.weightKg;
         session.planTitle = plan != null ? plan.title : "";
+        tracker = plan != null ? new CoachLogic.StepTracker(plan, session.hrMax) : null;
         stats = new Training.Stats(p);
         gpsDistance = 0;
         anchor = null;
@@ -374,6 +377,7 @@ public class Recorder implements HrManager.Listener {
         if (keep) {
             session.apply(stats);
             if (plan != null) {
+                session.stepResults = tracker != null ? tracker.results : session.stepResults;
                 session.targetPct = targetTimedMs >= 60000
                         ? (int) Math.round(100.0 * inTargetMs / targetTimedMs) : -1;
                 Coach.get(appContext).markDone();
@@ -397,6 +401,7 @@ public class Recorder implements HrManager.Listener {
         }
         session = null;
         plan = null;
+        tracker = null;
         lastSavedId = keep ? id : -1;
         notifyListeners();
         return lastSavedId;
@@ -467,6 +472,9 @@ public class Recorder implements HrManager.Listener {
         } else if (tightenAtMs >= 0 && stats.activeMs >= tightenAtMs) {
             tightenAtMs = -1;
             hr.setSessionLimits(Math.min(pendingHigh, hr.getUserThreshold()), hr.getLowLimit());
+        }
+        if (tracker != null) {
+            tracker.add(idx, dt, s.bpm);
         }
         if (idx < plan.steps.size() && s.bpm > 0) {
             int[] band = CoachLogic.targetBand(plan.steps.get(idx), session.hrMax);

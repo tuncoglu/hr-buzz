@@ -89,6 +89,83 @@ public final class CoachLogic {
         }
     }
 
+    /** How one step of a coached workout went: what was asked, and where the heart rate sat. */
+    public static final class StepResult {
+        public String name = "";
+        public int zoneLow;
+        public int zoneHigh;
+        /** The step's target range in bpm. */
+        public int low;
+        public int high;
+        public long plannedMs;
+        /** Moving time actually spent in the step. */
+        public long ms;
+        /** Of that, the time with a heart rate, and how it split around the target. */
+        public long timedMs;
+        public long belowMs;
+        public long aboveMs;
+        /** Heart rate times milliseconds, for the average. */
+        public long bpmMs;
+
+        public long inMs() {
+            return Math.max(0, timedMs - belowMs - aboveMs);
+        }
+
+        /** Share of the timed minutes inside the target, or -1 with too little to say. */
+        public int inPct() {
+            return timedMs >= 10000 ? (int) Math.round(100.0 * inMs() / timedMs) : -1;
+        }
+
+        public int belowPct() {
+            return timedMs >= 10000 ? (int) Math.round(100.0 * belowMs / timedMs) : -1;
+        }
+
+        public int abovePct() {
+            return timedMs >= 10000 ? (int) Math.round(100.0 * aboveMs / timedMs) : -1;
+        }
+
+        public int avgHr() {
+            return timedMs > 0 ? (int) Math.round((double) bpmMs / timedMs) : 0;
+        }
+    }
+
+    /** Collects a {@link StepResult} per step while a coached workout runs. */
+    public static final class StepTracker {
+        public final List<StepResult> results = new ArrayList<>();
+
+        public StepTracker(Plan plan, int hrMax) {
+            for (Step st : plan.steps) {
+                StepResult r = new StepResult();
+                r.name = st.name;
+                r.zoneLow = st.zoneLow;
+                r.zoneHigh = st.zoneHigh;
+                int[] band = targetBand(st, hrMax);
+                r.low = band[0];
+                r.high = band[1];
+                r.plannedMs = st.minutes * 60000L;
+                results.add(r);
+            }
+        }
+
+        /** @param bpm the heart rate for this stretch, or 0 or less when there is none */
+        public void add(int step, long dtMs, int bpm) {
+            if (step < 0 || step >= results.size() || dtMs <= 0) {
+                return;
+            }
+            StepResult r = results.get(step);
+            r.ms += dtMs;
+            if (bpm > 0) {
+                r.timedMs += dtMs;
+                r.bpmMs += bpm * dtMs;
+                if (bpm < r.low) {
+                    r.belowMs += dtMs;
+                } else if (bpm > r.high) {
+                    r.aboveMs += dtMs;
+                }
+            }
+        }
+    }
+
     /** A finished session, reduced to what the coach may see. */
     public static final class SessionInfo {
         public long start;
@@ -115,6 +192,8 @@ public final class CoachLogic {
         public int talk;
         /** hrMax its zone minutes were worked out with (the one in force then), 0 if unknown. */
         public int hrMax;
+        /** How each step of a coached workout went; empty for a free session. */
+        public List<StepResult> stepResults = new ArrayList<>();
         /** What the coach's debrief of this session said comes next, or "". */
         public String coachNext = "";
     }
@@ -1316,6 +1395,30 @@ public final class CoachLogic {
         return out;
     }
 
+    /** Sessions of the last 4 weeks set what a "usual" session is. */
+    static final int USUAL_DAYS = 28;
+
+    /**
+     * How big this session's training load was against their usual one, as a percentage: the
+     * median load of their other sessions of the last 4 weeks (at least 3, 10 minutes or
+     * more). -1 when there is too little to compare with.
+     */
+    public static int loadVsUsual(double trimp, long thisStart, List<SessionInfo> sessions,
+                                  long now) {
+        List<Integer> loads = new ArrayList<>();
+        for (SessionInfo si : sessions) {
+            if (si.start != thisStart && si.trimp > 0 && si.activeMs >= 10 * 60000L
+                    && now - si.start < USUAL_DAYS * 86400000L) {
+                loads.add((int) Math.round(si.trimp));
+            }
+        }
+        if (loads.size() < 3 || trimp <= 0) {
+            return -1;
+        }
+        int usual = medianOf(loads);
+        return usual <= 0 ? -1 : (int) Math.round(100.0 * trimp / usual);
+    }
+
     /** Days of sessions the usual pace is taken from. */
     static final int PACE_DAYS = 21;
 
@@ -2031,6 +2134,27 @@ public final class CoachLogic {
                     : trim(s.notes, 400));
         }
         addBreaks(session, s);
+        if (!s.stepResults.isEmpty()) {
+            List<Object> steps = new ArrayList<>();
+            for (StepResult r : s.stepResults) {
+                if (r.ms < 10000) {
+                    continue;       // never reached
+                }
+                Map<String, Object> m = Json.map("name", r.name, "zones", r.zoneLow == r.zoneHigh
+                        ? String.valueOf(r.zoneLow) : r.zoneLow + "-" + r.zoneHigh,
+                        "targetBpm", r.low + "-" + r.high,
+                        "plannedMinutes", Math.round(r.plannedMs / 6000.0) / 10.0,
+                        "doneMinutes", Math.round(r.ms / 6000.0) / 10.0);
+                if (r.inPct() >= 0) {
+                    m.put("percentInTarget", r.inPct());
+                    m.put("percentAbove", r.abovePct());
+                    m.put("percentBelow", r.belowPct());
+                    m.put("avgHr", r.avgHr());
+                }
+                steps.add(m);
+            }
+            session.put("stepsAgainstPlan", steps);
+        }
         if (!s.splits.isEmpty()) {
             List<Object> km = new ArrayList<>();
             for (int i = 0; i < s.splits.size(); i++) {

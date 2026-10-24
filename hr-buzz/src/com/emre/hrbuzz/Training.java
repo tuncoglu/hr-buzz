@@ -235,6 +235,29 @@ public final class Training {
                 : String.format(Locale.ROOT, "%02d:%02d", m, s);
     }
 
+    /**
+     * The Monday of the week a time falls in, as a day number (days since 1970), so sessions of
+     * the same week share a key.
+     */
+    public static long weekStartDay(long millis, java.time.ZoneId zone) {
+        return java.time.Instant.ofEpochMilli(millis).atZone(zone).toLocalDate()
+                .with(java.time.DayOfWeek.MONDAY).toEpochDay();
+    }
+
+    /** "This week", "Last week", or "Week of 12 Oct", for the week starting on that Monday. */
+    public static String weekLabel(long weekStartDay, long now, java.time.ZoneId zone) {
+        long thisWeek = weekStartDay(now, zone);
+        if (weekStartDay == thisWeek) {
+            return "This week";
+        }
+        if (weekStartDay == thisWeek - 7) {
+            return "Last week";
+        }
+        java.time.LocalDate d = java.time.LocalDate.ofEpochDay(weekStartDay);
+        return "Week of " + d.getDayOfMonth() + " " + d.getMonth()
+                .getDisplayName(java.time.format.TextStyle.SHORT, Locale.ENGLISH);
+    }
+
     /** Minutes:seconds per km for a speed in m/s; "--:--" when stopped or implausible. */
     public static String pace(double metresPerSecond) {
         if (metresPerSecond < 0.3) {
