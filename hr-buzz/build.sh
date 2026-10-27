@@ -111,50 +111,9 @@ if [ -z "${DEBUG_BUILD:-}" ] && "$BT/aapt2" dump badging "$APK" | grep -q 'appli
     echo "release build is debuggable; refusing"; rm -f "$APK"; exit 1
 fi
 
-# Release builds also make the Android App Bundle that Play takes: the same resources linked in
-# protobuf form, laid out as a base module, built by bundletool and signed with the upload key.
-# bundletool is a standalone jar (github.com/google/bundletool/releases, bundletool-all-*.jar).
+# Release builds also make the Android App Bundle that Play takes.
 if [ -z "${DEBUG_BUILD:-}" ]; then
-    BUNDLETOOL="${BUNDLETOOL:-$HOME/.cache/polar-hr-toolchain/bundletool.jar}"
-    AAB="hr-buzz-release.aab"
-    if [ ! -f "$BUNDLETOOL" ]; then
-        echo "bundletool not found at $BUNDLETOOL (set BUNDLETOOL); built the APK only." >&2
-        exit 0
-    fi
-    echo "==> bundle"
-    "$BT/aapt2" link --proto-format \
-        -o "$OUT/base-proto.apk" \
-        -I "$PLATFORM" \
-        --manifest "$MANIFEST" \
-        --min-sdk-version "$MIN_SDK" \
-        --target-sdk-version "$TARGET_SDK" \
-        --version-code "$VERSION_CODE" \
-        --version-name "$VERSION_NAME" \
-        "$OUT/res.zip"
-    rm -rf "$OUT/module" "$OUT/base.zip" "$AAB"
-    mkdir -p "$OUT/module/manifest" "$OUT/module/dex"
-    python3 - "$OUT/base-proto.apk" "$OUT/module" <<'PY2'
-import sys, zipfile
-apk, dest = sys.argv[1], sys.argv[2]
-with zipfile.ZipFile(apk) as z:
-    for n in z.namelist():
-        if n == "AndroidManifest.xml":
-            z.extract(n, dest + "/manifest")
-        else:
-            z.extract(n, dest)
-PY2
-    cp "$OUT/dex/classes.dex" "$OUT/module/dex/classes.dex"
-    (cd "$OUT/module" && python3 -c "
-import os, zipfile
-with zipfile.ZipFile('../base.zip', 'w', zipfile.ZIP_DEFLATED) as z:
-    for root, _, files in os.walk('.'):
-        for f in files:
-            p = os.path.join(root, f)
-            z.write(p, os.path.relpath(p, '.'))
-")
-    java -jar "$BUNDLETOOL" build-bundle --modules="$OUT/base.zip" --output="$AAB"
-    jarsigner -keystore "$UPLOAD_KEYSTORE" -storepass "$UPLOAD_PASS" -keypass "$UPLOAD_PASS" \
-        -sigalg SHA256withRSA -digestalg SHA-256 "$AAB" "$UPLOAD_ALIAS" >/dev/null
-    jarsigner -verify "$AAB" | head -1
-    ls -lh "$AAB"
+    # shellcheck source=/dev/null
+    source "$(dirname "$0")/bundle.sh"
+    make_bundle "$MANIFEST" "$OUT/res.zip" "$OUT/dex/classes.dex" "$OUT" hr-buzz-release.aab
 fi
