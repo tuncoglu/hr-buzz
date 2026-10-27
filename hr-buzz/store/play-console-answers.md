@@ -14,6 +14,9 @@ Data collected / shared, all with "optional" where the user turns it on:
 - No data is shared for advertising or analytics; no data is sold.
 - Because the data stays on the device unless the coach is on, "collected" for the on-device items depends on how Play defines it: data processed only on device and never sent need not be declared as collected. Read the form's help text for that case.
 
+## AI-generated content policy
+The coach writes text with a third-party AI service. In-app reporting is built in: "Report this answer" under every chat reply and debrief saves a report on the phone and offers an email to privacy@sourdoughcalculator.uk (the person presses Send themselves). Mention it in the Console's AI-generated content answer. Safety: chest-pain, fainting and similar messages are answered on the phone and never sent to the model; the phone also checks every plan before it can run.
+
 ## Health Connect declaration (one use case per type)
 All reads, no writes:
 - `READ_STEPS`, `READ_EXERCISE`: move minutes on the home screen and activity context for the coach.

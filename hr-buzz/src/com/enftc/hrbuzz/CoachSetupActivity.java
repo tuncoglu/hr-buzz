@@ -260,6 +260,10 @@ public class CoachSetupActivity extends Activity {
         line(seen, "\u2715", 0xFFFF6961, "Never: GPS routes or location, second-by-second heart "
                 + "rate, beat-to-beat (RR) data, your name, contacts");
 
+        Button reported = button(root, "Reported answers (" + coach.reportCount() + ")");
+        reported.setOnClickListener(v -> ReportUi.review(this, () -> {
+            reported.setText("Reported answers (" + coach.reportCount() + ")");
+        }));
         Button last = button(root, "See the last message sent");
         last.setOnClickListener(v -> showLastRequest());
         Button forget = button(root, "Delete everything the coach remembers");

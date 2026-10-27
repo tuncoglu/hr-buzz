@@ -34,9 +34,11 @@ HR Buzz asks to read steps, exercise sessions, and optionally sleep, distance, r
 
 HR Buzz shares nothing on its own. You can export a session as TCX or GPX and send it to another app; that is your choice each time.
 
+**Reporting a coach answer.** Under each coach reply and debrief there is a "Report this answer" link. It saves a report on your phone: the answer, what was asked, the reason you chose, and which AI service and model wrote it. HR Buzz then offers to email it to privacy@sourdoughcalculator.uk. If you accept, your own email app opens with the report written out for you to read and edit, and nothing is sent until you press Send there; it is then handled by your email provider and by us like any email you send us. You can delete saved reports in Coach settings.
+
 ## Keeping and deleting data
 
-Data lives in the app's private storage. "Delete everything the coach remembers" clears the coach's plan, chat, notes, check-ins and request log. Uninstalling the app deletes everything it stored. Data already sent to the AI service you chose is outside the app's control; contact that service about it.
+Data lives in the app's private storage. "Delete everything the coach remembers" clears the coach's plan, chat, notes, check-ins, saved reports and request log. Uninstalling the app deletes everything it stored. Data already sent to the AI service you chose is outside the app's control; contact that service about it.
 
 ## Not medical advice
 

@@ -17,6 +17,7 @@ javac -d build/test-classes \
     src/com/enftc/hrbuzz/CoachLogic.java \
     src/com/enftc/hrbuzz/Provider.java \
     src/com/enftc/hrbuzz/Llm.java \
+    src/com/enftc/hrbuzz/Reports.java \
     src/com/enftc/hrbuzz/Import.java \
     src/com/enftc/hrbuzz/Move.java \
     wear/src/com/enftc/hrbuzz/WearLogic.java \
@@ -24,6 +25,7 @@ javac -d build/test-classes \
     test/com/enftc/hrbuzz/TrainingTest.java \
     test/com/enftc/hrbuzz/CoachTest.java \
     test/com/enftc/hrbuzz/LlmTest.java \
+    test/com/enftc/hrbuzz/ReportsTest.java \
     test/com/enftc/hrbuzz/ImportTest.java \
     test/com/enftc/hrbuzz/MoveTest.java \
     test/com/enftc/hrbuzz/WearLogicTest.java
@@ -32,6 +34,7 @@ java -cp build/test-classes com.enftc.hrbuzz.HrLogicTest
 java -cp build/test-classes com.enftc.hrbuzz.TrainingTest
 java -cp build/test-classes com.enftc.hrbuzz.CoachTest
 java -cp build/test-classes com.enftc.hrbuzz.LlmTest
+java -cp build/test-classes com.enftc.hrbuzz.ReportsTest
 java -cp build/test-classes com.enftc.hrbuzz.ImportTest
 java -cp build/test-classes com.enftc.hrbuzz.MoveTest
 java -cp build/test-classes com.enftc.hrbuzz.WearLogicTest

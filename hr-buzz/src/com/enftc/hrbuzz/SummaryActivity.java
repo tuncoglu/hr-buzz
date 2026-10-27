@@ -503,6 +503,15 @@ public class SummaryActivity extends Activity {
                 n.setPadding(0, Ui.dp(this, 8), 0, 0);
                 coachBox.addView(n);
             }
+            StringBuilder said = new StringBuilder(d.headline);
+            for (String pnt : d.points) {
+                said.append("\n• ").append(pnt);
+            }
+            if (!d.next.isEmpty()) {
+                said.append("\nNext: ").append(d.next);
+            }
+            coachBox.addView(ReportUi.link(this, "debrief", "Debrief of a " + summary.sport
+                    + " session", said.toString()));
             if (debriefing) {
                 coachBox.addView(padTop(Ui.text(this, "Updating with your answer…", 13,
                         Ui.TEXT2)));

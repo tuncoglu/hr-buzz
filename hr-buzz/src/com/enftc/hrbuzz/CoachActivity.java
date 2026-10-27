@@ -239,8 +239,15 @@ public class CoachActivity extends Activity {
                     + "\u201cI only have 20 minutes\u201d changes today's plan for you.", 14,
                     Ui.TEXT2), 6));
         }
+        String lastQuestion = "";
         for (String[] turn : chat) {
-            content.addView(bubble(turn[1], "you".equals(turn[0])));
+            boolean mine = "you".equals(turn[0]);
+            content.addView(bubble(turn[1], mine));
+            if (mine) {
+                lastQuestion = turn[1];
+            } else {
+                content.addView(ReportUi.link(this, "chat", lastQuestion, turn[1]));
+            }
         }
         if (showUpdated && plan != null) {
             content.addView(updatedCard(plan));

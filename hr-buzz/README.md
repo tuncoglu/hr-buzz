@@ -65,6 +65,8 @@ An LLM coach built to take as little effort as possible. It talks first, and you
 - **Max HR check.** The coach is told where your max HR came from, the age estimate and your highest recorded peak, and which long sessions averaged 88% of max or more. A habit of those usually means the max is set too low; the coach raises it once and asks how they felt.
 - **Memory.** Lasting things you tell it in the chat (a preference, an injury, what training does for you) are kept, listed in the coach screen, and can be forgotten one by one. The coach also sees the last two weeks of what was planned, what you changed and what you did, and what it told you after each session.
 
+- **Report this answer.** Under every coach reply in the chat and under each session debrief. Choosing a reason (wrong or unsafe advice, offensive, made up or not about training, something else) saves the report on the phone with the answer, what was asked and which service and model wrote it; the person is then offered an email to `privacy@sourdoughcalculator.uk`, written out in their own mail app for them to read, and nothing is sent until they press Send there. Coach settings lists how many are saved, and can email or delete them; "Delete everything the coach remembers" removes them too. Up to 50 are kept.
+
 The model proposes; the phone decides. `CoachLogic.guard` checks every plan before it can run:
 
 - It must be a valid shape. Sports and zones are clamped, and a session can be at most 4 hours (or your usual length while there are no recent sessions to build on).

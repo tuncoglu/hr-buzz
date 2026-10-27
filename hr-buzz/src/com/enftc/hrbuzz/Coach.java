@@ -837,12 +837,40 @@ public class Coach {
         return prefs.getString("coachLastRequest", null);
     }
 
+    // ---------------------------------------------------------------- reports
+
+    /**
+     * Keeps a "Report this answer" on the phone: what was said, what was asked, why it was
+     * flagged, and which service and model wrote it. Nothing leaves the phone from here.
+     */
+    public void report(String kind, String reason, String question, String answer) {
+        prefs.edit().putString("coachReports", Reports.add(prefs.getString("coachReports", ""),
+                System.currentTimeMillis(), kind, reason,
+                hasKey() ? provider().label : "", hasKey() ? model() : "", question, answer))
+                .apply();
+    }
+
+    public int reportCount() {
+        return Reports.count(prefs.getString("coachReports", ""));
+    }
+
+    /** All saved reports as the text of an email, or just the newest one. */
+    public String reportsEmailBody(boolean onlyNewest) {
+        String all = prefs.getString("coachReports", "");
+        return Reports.emailBody(onlyNewest ? Reports.last(all) : all);
+    }
+
+    public void clearReports() {
+        prefs.edit().remove("coachReports").apply();
+    }
+
     /**
      * Deletes the plan and its history, the conversation, what it remembers, the check-ins,
-     * the request log and every session debrief.
+     * the request log, the saved reports and every session debrief.
      */
     public void forget() {
-        prefs.edit().remove("coachPlan").remove("coachChat").remove("coachLastRequest")
+        prefs.edit().remove("coachReports").remove("coachPlan").remove("coachChat")
+                .remove("coachLastRequest")
                 .remove("coachDone").remove("coachPlanLog").remove("coachRemember")
                 .remove("coachCheckIns").remove("coachHrMaxRaised").apply();
         for (SessionStore.Summary s : SessionStore.list(appContext)) {
