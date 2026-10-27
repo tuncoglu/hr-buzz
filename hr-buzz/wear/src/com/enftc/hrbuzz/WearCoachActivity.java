@@ -450,12 +450,10 @@ public class WearCoachActivity extends Activity {
                 keyOk = false;
                 Toast.makeText(this, "Not an OpenAI, Claude, Gemini or DeepSeek key",
                         Toast.LENGTH_LONG).show();
-            } else if (!coach.setKey(key)) {
-                keyOk = false;
-                Toast.makeText(this, "Couldn't store the key", Toast.LENGTH_LONG).show();
             } else {
+                // Saved only if the service accepts it, so a typo never replaces a working key.
                 final android.content.Context app = getApplicationContext();
-                coach.checkKey((state, message) -> Toast.makeText(app,
+                coach.checkNewKey(key, (state, message) -> Toast.makeText(app,
                         state == Coach.KEY_OK ? "Using " + message
                                 : state == Coach.KEY_REJECTED ? "Key not saved: " + message
                                 : "Key saved, not checked: " + message,
@@ -476,7 +474,7 @@ public class WearCoachActivity extends Activity {
         coach.schedule();
         editing = false;
         error = null;
-        if (!coach.hasKey()) {
+        if (!coach.hasKey() && key.isEmpty()) {
             Toast.makeText(this, "Saved. Add an API key to switch the coach on",
                     Toast.LENGTH_LONG).show();
         } else if (coach.isEnabled() && !coach.isPlanning()

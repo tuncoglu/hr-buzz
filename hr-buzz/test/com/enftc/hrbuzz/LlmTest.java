@@ -57,6 +57,16 @@ public final class LlmTest {
         ok("garbage is not a key", Provider.identify("hello").isEmpty());
         ok("a short AIza is not a key", Provider.identify("AIza123").isEmpty());
         ok("nothing", Provider.identify(null).isEmpty() && Provider.identify("").isEmpty());
+        eq("a copied key alone", ANTHROPIC_KEY, Provider.keyIn(ANTHROPIC_KEY));
+        eq("with a newline from the copy", GEMINI_KEY, Provider.keyIn(GEMINI_KEY + "\n"));
+        eq("inside a sentence", OPENAI_KEY, Provider.keyIn("Here is your key: " + OPENAI_KEY + " keep it safe."));
+        eq("in quotes", DEEPSEEK_KEY, Provider.keyIn("\"" + DEEPSEEK_KEY + "\""));
+        eq("in backticks with a full stop", ANTHROPIC_KEY, Provider.keyIn("`" + ANTHROPIC_KEY + "`."));
+        ok("ordinary text holds no key", Provider.keyIn("buy milk and call the dentist") == null);
+        ok("a web address is not a key", Provider.keyIn("https://platform.openai.com/api-keys") == null);
+        ok("a short sk- word is not a key", Provider.keyIn("sk-short") == null);
+        ok("nothing copied", Provider.keyIn("") == null && Provider.keyIn(null) == null);
+        ok("a huge paste is ignored", Provider.keyIn("x ".repeat(2000)) == null);
         eq("saved ids come back", Provider.GEMINI, Provider.byId("gemini"));
         eq("keys saved before the choice existed are deepseek's", Provider.DEEPSEEK,
                 Provider.byId(null));

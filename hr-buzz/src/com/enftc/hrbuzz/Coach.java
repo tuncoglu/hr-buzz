@@ -280,39 +280,40 @@ public class Coach {
     public interface KeyCheck {
         /**
          * On the main thread. {@code KEY_OK}: the service accepted it ({@code message} says
-         * which and what model). {@code KEY_REJECTED}: it did not, and the key was removed.
-         * {@code KEY_UNCHECKED}: could not ask (offline); the key is kept.
+         * which and what model). {@code KEY_REJECTED}: it did not, and the key was not saved.
+         * {@code KEY_UNCHECKED}: could not ask (offline); the key was saved.
          */
         void done(int state, String message);
     }
 
     /**
-     * Asks the key's service which models it offers, then settles the provider and the model
-     * (on the worker). A key the service refuses is removed.
+     * Asks the key's service which models it offers and, only if the service accepts the key,
+     * saves it with the provider and model it settled on (on the worker). A key the service
+     * refuses is not saved, so a typo never replaces a key that works; one that cannot be
+     * checked (offline) is saved and settled on first use.
      */
-    public void checkKey(KeyCheck check) {
+    public void checkNewKey(String key, KeyCheck check) {
+        final String k = key == null ? "" : key.trim();
         worker.execute(() -> {
-            String k = key();
             int state;
             String message;
-            if (k == null) {
-                state = KEY_REJECTED;
-                message = "No key saved";
-            } else {
-                try {
-                    Llm.Connection c = Llm.connect(k);
+            try {
+                Llm.Connection c = Llm.connect(k);
+                if (setKey(k)) {
                     prefs.edit().putString("coachProvider", c.provider.id)
                             .putString("coachModel", c.model).apply();
                     state = KEY_OK;
                     message = serviceLine();
-                } catch (Llm.ApiException e) {
-                    message = e.getMessage();
-                    if (e.code == 401 || e.code == 403) {
-                        setKey("");
-                        state = KEY_REJECTED;
-                    } else {
-                        state = KEY_UNCHECKED;
-                    }
+                } else {
+                    state = KEY_REJECTED;
+                    message = "Couldn't store the key on this phone";
+                }
+            } catch (Llm.ApiException e) {
+                message = e.getMessage();
+                if (e.code == 401 || e.code == 403) {
+                    state = KEY_REJECTED;
+                } else {
+                    state = setKey(k) ? KEY_UNCHECKED : KEY_REJECTED;
                 }
             }
             final int s = state;

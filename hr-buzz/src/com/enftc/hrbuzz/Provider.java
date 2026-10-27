@@ -101,6 +101,26 @@ public enum Provider {
         return out;
     }
 
+    /**
+     * A key found in copied text: the first word that is shaped like one, minus quotes and
+     * trailing punctuation, so "Your key: sk-ant-..." or a key in backticks still works. Null
+     * when the text holds none. Keys are letters, digits, dashes and underscores, so a web
+     * address or a sentence is never taken for one.
+     */
+    public static String keyIn(String text) {
+        if (text == null || text.length() > 2000) {
+            return null;
+        }
+        for (String word : text.split("\\s+")) {
+            String k = word.replaceAll("^[\"'`(\\[<]+|[\"'`),.;:>\\]]+$", "");
+            if (k.length() >= 20 && k.length() <= 300 && k.matches("[A-Za-z0-9_\\-]+")
+                    && !identify(k).isEmpty()) {
+                return k;
+            }
+        }
+        return null;
+    }
+
     // ------------------------------------------------------------------ the wire
 
     /** Chat endpoint. {@code base} is {@link #baseUrl} unless a test points it elsewhere. */

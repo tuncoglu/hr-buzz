@@ -54,9 +54,10 @@ Each service shows a key **once**, when you create it: copy it straight away and
 
 ## Then
 
-1. In HR Buzz open **Coach**, paste the key and leave the screen. HR Buzz checks it and shows "Using ..." with the service and model.
-2. If a key is wrong, HR Buzz says so and does not keep it. If you paste a key by mistake somewhere else, delete it on the service's page and create a new one.
-3. To switch service, paste a key from another one.
+1. In HR Buzz open **Coach settings** and tap your service under "Need a key?". Its key page opens in your browser: create the key there and copy it.
+2. Come back to HR Buzz. It offers **Use the key you just copied?**: tap it. (Or tap **Paste from clipboard** at any time. Made the key on a computer? Send it to your phone, copy it there, and do the same.)
+3. HR Buzz checks the key with the service, shows "Using ..." with the service and model, and clears the clipboard. If the key is wrong, HR Buzz says so and keeps the key you had before. If a key ends up somewhere it should not be, delete it on the service's page and create a new one.
+4. To switch service, paste a key from another one.
 
 ## What is sent
 

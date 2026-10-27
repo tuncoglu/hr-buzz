@@ -46,6 +46,13 @@ public class CoachSetupActivity extends Activity {
     private TextView serviceText;
     /** What the key being typed looks like, before it is saved. */
     private TextView detectText;
+    /** The "use the key you just copied?" offer, and the key it would use. */
+    private android.widget.LinearLayout clipOffer;
+    private TextView clipOfferText;
+    private String offeredKey;
+    /** Set when a key page was opened: the clipboard is looked at once on the way back. */
+    private boolean awaitingKey;
+    private ScrollView scrollView;
     private String goal;
     private int days;
     private int minutes;
@@ -69,6 +76,7 @@ public class CoachSetupActivity extends Activity {
         morning = coach.morningMinute();
 
         ScrollView scroll = new ScrollView(this);
+        scrollView = scroll;
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         int pad = Ui.dp(this, 20);
@@ -90,6 +98,30 @@ public class CoachSetupActivity extends Activity {
         serviceText = Ui.text(this, serviceLine(), 15, 0xFFC8C8CE);
         serviceText.setGravity(Gravity.END);
         model.addView(serviceText);
+        // Offered when the person comes back from a key page with a key on the clipboard.
+        clipOffer = new LinearLayout(this);
+        clipOffer.setOrientation(LinearLayout.VERTICAL);
+        clipOffer.setBackgroundResource(R.drawable.row);
+        int offerPad = Ui.dp(this, 12);
+        clipOffer.setPadding(offerPad, offerPad, offerPad, offerPad);
+        clipOfferText = Ui.text(this, "", 14, Ui.TEXT);
+        clipOffer.addView(clipOfferText);
+        TextView useOffered = Ui.chip(this, "Use it");
+        useOffered.setMinHeight(Ui.dp(this, 44));
+        useOffered.setOnClickListener(v -> {
+            if (offeredKey != null) {
+                useKey(offeredKey, true);
+            }
+        });
+        LinearLayout.LayoutParams useLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        useLp.topMargin = Ui.dp(this, 8);
+        clipOffer.addView(useOffered, useLp);
+        clipOffer.setVisibility(android.view.View.GONE);
+        LinearLayout.LayoutParams offerLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        offerLp.topMargin = Ui.dp(this, 10);
+        card.addView(clipOffer, offerLp);
         TextView keyLabel = Ui.text(this, "Your API key", 15, Ui.TEXT);
         keyLabel.setPadding(0, Ui.dp(this, 8), 0, 0);
         card.addView(keyLabel);
@@ -102,28 +134,28 @@ public class CoachSetupActivity extends Activity {
         card.addView(keyInput);
         detectText = Ui.text(this, "", 13, Ui.TEXT2);
         card.addView(detectText);
-        TextView checkKey = Ui.chip(this, "Check the key");
-        checkKey.setMinHeight(Ui.dp(this, 44));
-        checkKey.setOnClickListener(v -> {
-            String k = keyInput.getText().toString().replaceAll("\\s+", "");
-            if (k.isEmpty()) {
-                detectText.setText("Paste a key first.");
-            } else if (Provider.identify(k).isEmpty()) {
-                detectText.setText("Not a key HR Buzz recognises (it works with OpenAI, Claude, "
-                        + "Gemini and DeepSeek keys).");
-            } else if (coach.setKey(k)) {
-                keyInput.setText("");
-                keyInput.setHint("Saved — paste a new one to replace it");
-                serviceText.setText(serviceLine());
-                verifyKey();
+        TextView pasteKey = Ui.chip(this, "Paste from clipboard");
+        pasteKey.setMinHeight(Ui.dp(this, 44));
+        pasteKey.setOnClickListener(v -> {
+            String k = Provider.keyIn(clipboardText());
+            if (k == null) {
+                detectText.setText("There is no key on the clipboard. Copy one from the "
+                        + "service's page first.");
             } else {
-                detectText.setText("Couldn't store the key on this phone.");
+                useKey(k, true);
             }
         });
-        LinearLayout.LayoutParams checkLp = new LinearLayout.LayoutParams(
+        TextView checkKey = Ui.chip(this, "Check the key");
+        checkKey.setMinHeight(Ui.dp(this, 44));
+        checkKey.setOnClickListener(v ->
+                useKey(keyInput.getText().toString().replaceAll("\\s+", ""), false));
+        LinearLayout keyButtons = new LinearLayout(this);
+        keyButtons.addView(pasteKey);
+        keyButtons.addView(checkKey);
+        LinearLayout.LayoutParams keyButtonsLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        checkLp.topMargin = Ui.dp(this, 6);
-        card.addView(checkKey, checkLp);
+        keyButtonsLp.topMargin = Ui.dp(this, 6);
+        card.addView(keyButtons, keyButtonsLp);
         keyInput.addTextChangedListener(new android.text.TextWatcher() {
             @Override
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {
@@ -148,7 +180,7 @@ public class CoachSetupActivity extends Activity {
                 + "works out which one it is, checks it and chooses the model itself. The key "
                 + "is encrypted with a key held by Android's keystore and only ever sent to "
                 + "that service over HTTPS.");
-        TextView getKey = Ui.text(this, "Need a key? Open the page where you create one:", 13,
+        TextView getKey = Ui.text(this, "Need a key? Open the page where you create one, copy it, and come back:", 13,
                 Ui.TEXT2);
         getKey.setPadding(0, Ui.dp(this, 8), 0, Ui.dp(this, 4));
         card.addView(getKey);
@@ -156,7 +188,10 @@ public class CoachSetupActivity extends Activity {
         for (Provider p : Provider.all()) {
             TextView chip = Ui.chip(this, p.shortName());
             chip.setMinHeight(Ui.dp(this, 44));
-            chip.setOnClickListener(v -> openUrl(p.keyPage));
+            chip.setOnClickListener(v -> {
+                awaitingKey = true;     // look at the clipboard once when the person is back
+                openUrl(p.keyPage);
+            });
             keyLinks.addView(chip);
         }
         HorizontalScrollView links = new HorizontalScrollView(this);
@@ -327,16 +362,9 @@ public class CoachSetupActivity extends Activity {
                 keyOk = false;
                 Toast.makeText(this, "Key not saved: it is not an OpenAI, Claude, Gemini or "
                         + "DeepSeek key", Toast.LENGTH_LONG).show();
-            } else if (coach.setKey(key)) {
-                keyInput.setText("");
-                keyInput.setHint("Saved \u2014 paste a new one to replace it");
-                serviceText.setText(serviceLine());
-                newKey = true;
-                verifyKey();
             } else {
-                keyOk = false;
-                Toast.makeText(this, "Couldn't store the key on this phone", Toast.LENGTH_LONG)
-                        .show();
+                newKey = true;
+                verifyKey(key, false);
             }
         }
         boolean on = onSwitch.isChecked();
@@ -361,7 +389,7 @@ public class CoachSetupActivity extends Activity {
                 .putString("coachWorkAround", other.isEmpty() ? around : CoachLogic.trim(other, 80))
                 .putInt("coachMorning", morning).apply();
         coach.schedule();
-        if (on && !coach.hasKey()) {
+        if (on && !coach.hasKey() && !newKey) {
             if (loud && keyOk) {
                 Toast.makeText(this, "Saved. Add an API key to switch the coach on",
                         Toast.LENGTH_LONG).show();
@@ -384,18 +412,27 @@ public class CoachSetupActivity extends Activity {
     }
 
     /**
-     * Asks the saved key's service whether it accepts the key and which model to use, and says
-     * so here. If the screen has already been left, a toast is the best that is left. Once
-     * the key is accepted (or could not be checked, offline) the first plan is requested.
+     * Asks the key's service whether it accepts it and which model to use, saves it only if
+     * it does, and says so here. If the screen has already been left, a toast is the best that
+     * is left. Once the key is saved the first plan is requested. A key that came from the
+     * clipboard is wiped from it once it has been used.
      */
-    private void verifyKey() {
+    private void verifyKey(String key, boolean fromClipboard) {
         final Context app = getApplicationContext();
+        final boolean hadKey = coach.hasKey();
         detectText.setText("Checking the key…");
-        coach.checkKey((state, message) -> {
+        coach.checkNewKey(key, (state, message) -> {
             String line = state == Coach.KEY_OK ? "Using " + message
                     : state == Coach.KEY_REJECTED ? "Key not saved: " + message
+                    + (hadKey ? ". Your previous key is still in use." : "")
                     : "Key saved, but could not be checked right now: " + message;
+            if (state != Coach.KEY_REJECTED && fromClipboard) {
+                clearClipboard();
+            }
             if (!isDestroyed() && !isFinishing()) {
+                if (state != Coach.KEY_REJECTED) {
+                    keyInput.setText("");       // clears the line below too, so set it after
+                }
                 detectText.setText(line);
                 serviceText.setText(serviceLine());
                 keyInput.setHint(coach.hasKey() ? "Saved — paste a new one to replace it"
@@ -408,6 +445,68 @@ public class CoachSetupActivity extends Activity {
                 coach.refreshPlan("They just set up the coach.", null);
             }
         });
+    }
+
+    /** Checks and saves a key typed or copied; says why when there is nothing to use. */
+    private void useKey(String k, boolean fromClipboard) {
+        if (k.isEmpty()) {
+            detectText.setText("Paste a key first.");
+            return;
+        }
+        if (Provider.identify(k).isEmpty()) {
+            detectText.setText("Not a key HR Buzz recognises (it works with OpenAI, Claude, "
+                    + "Gemini and DeepSeek keys).");
+            return;
+        }
+        clipOffer.setVisibility(android.view.View.GONE);
+        offeredKey = null;
+        verifyKey(k, fromClipboard);
+    }
+
+    /**
+     * After a trip to a service's key page, a key on the clipboard is offered once, at the
+     * top of the key card. The clipboard is read only then (and by "Paste from clipboard"),
+     * never in the background; Android tells the person each time an app reads it.
+     */
+    @Override
+    public void onWindowFocusChanged(boolean hasFocus) {
+        super.onWindowFocusChanged(hasFocus);
+        if (!hasFocus || !awaitingKey) {
+            return;
+        }
+        awaitingKey = false;
+        String k = Provider.keyIn(clipboardText());
+        if (k != null) {
+            offeredKey = k;
+            clipOfferText.setText("Use the key you just copied? It looks like a "
+                    + Provider.identify(k).get(0).label + " key.");
+            clipOffer.setVisibility(android.view.View.VISIBLE);
+            scrollView.post(() -> scrollView.smoothScrollTo(0, 0));
+        }
+    }
+
+    private String clipboardText() {
+        android.content.ClipboardManager cm =
+                getSystemService(android.content.ClipboardManager.class);
+        if (cm == null || !cm.hasPrimaryClip() || cm.getPrimaryClipDescription() == null
+                || !cm.getPrimaryClipDescription().hasMimeType("text/*")) {
+            return "";
+        }
+        android.content.ClipData data = cm.getPrimaryClip();
+        if (data == null || data.getItemCount() == 0) {
+            return "";
+        }
+        CharSequence text = data.getItemAt(0).coerceToText(this);
+        return text == null ? "" : text.toString();
+    }
+
+    /** A key that has been used does not need to stay on the clipboard for other apps to read. */
+    private void clearClipboard() {
+        android.content.ClipboardManager cm =
+                getSystemService(android.content.ClipboardManager.class);
+        if (cm != null) {
+            cm.clearPrimaryClip();
+        }
     }
 
     /** "Claude (Anthropic) · claude-haiku-5-5", or a prompt when there is no key yet. */
