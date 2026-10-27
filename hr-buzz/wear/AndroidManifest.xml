@@ -22,7 +22,7 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
-    <!-- Coach only (off until set up): HTTPS to api.deepseek.com, and the morning plan job. -->
+    <!-- Coach only (off until set up): HTTPS to the AI service the person's own key belongs to (OpenAI, Anthropic, Google or DeepSeek), and the morning plan job. -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />

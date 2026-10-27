@@ -34,7 +34,8 @@ import javax.crypto.spec.GCMParameterSpec;
 
 /**
  * The coach on the Android side: settings, the API key (encrypted with a key that never leaves
- * Android's keystore), today's plan, the conversation, and the calls to DeepSeek. Every plan
+ * Android's keystore), today's plan, the conversation, and the calls to the AI service the key
+ * belongs to (OpenAI, Claude, Gemini or DeepSeek, worked out from the key). Every plan
  * goes through {@link CoachLogic#guard} before anything can run it. Application scoped.
  */
 public class Coach {
@@ -70,7 +71,6 @@ public class Coach {
     private final SharedPreferences prefs;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
-    private final DeepSeek api = new DeepSeek();
     /** Requests in flight; the UI shows "Updating" and ignores taps while above zero. */
     private final java.util.concurrent.atomic.AtomicInteger inFlight =
             new java.util.concurrent.atomic.AtomicInteger();
@@ -79,12 +79,12 @@ public class Coach {
         this.appContext = context;
         this.prefs = Prefs.of(context);
         // Timings only (no key, no text): where a slow coach request spends its time.
-        DeepSeek.trace = note -> Log.i(TAG, "api: " + note);
+        Llm.trace = note -> Log.i(TAG, "api: " + note);
     }
 
     // --------------------------------------------------------------- settings
 
-    /** Turned on, set up and holding a key: the coach may talk to DeepSeek. */
+    /** Turned on, set up and holding a key: the coach may talk to the key's AI service. */
     public boolean isEnabled() {
         return prefs.getBoolean("coachOn", false) && prefs.getBoolean("coachSetUp", false)
                 && hasKey();
@@ -257,15 +257,98 @@ public class Coach {
         return prefs.getString("coachKey", null) != null;
     }
 
+    /** The AI service the saved key belongs to. Keys saved before there was a choice are DeepSeek's. */
+    public Provider provider() {
+        return Provider.byId(prefs.getString("coachProvider", Provider.DEEPSEEK.id));
+    }
+
+    /** The model in use: the one picked for this key, or the service's usual one until then. */
+    public String model() {
+        String m = prefs.getString("coachModel", "");
+        return m.isEmpty() ? provider().fallbackModel : m;
+    }
+
+    /** "Claude (Anthropic) · claude-sonnet-5-5", or null with no key saved. */
+    public String serviceLine() {
+        return hasKey() ? provider().label + " · " + model() : null;
+    }
+
+    public static final int KEY_OK = 0;
+    public static final int KEY_REJECTED = 1;
+    public static final int KEY_UNCHECKED = 2;
+
+    public interface KeyCheck {
+        /**
+         * On the main thread. {@code KEY_OK}: the service accepted it ({@code message} says
+         * which and what model). {@code KEY_REJECTED}: it did not, and the key was removed.
+         * {@code KEY_UNCHECKED}: could not ask (offline); the key is kept.
+         */
+        void done(int state, String message);
+    }
+
     /**
-     * Encrypts and stores the key, then reads it back to be sure.
+     * Asks the key's service which models it offers, then settles the provider and the model
+     * (on the worker). A key the service refuses is removed.
+     */
+    public void checkKey(KeyCheck check) {
+        worker.execute(() -> {
+            String k = key();
+            int state;
+            String message;
+            if (k == null) {
+                state = KEY_REJECTED;
+                message = "No key saved";
+            } else {
+                try {
+                    Llm.Connection c = Llm.connect(k);
+                    prefs.edit().putString("coachProvider", c.provider.id)
+                            .putString("coachModel", c.model).apply();
+                    state = KEY_OK;
+                    message = serviceLine();
+                } catch (Llm.ApiException e) {
+                    message = e.getMessage();
+                    if (e.code == 401 || e.code == 403) {
+                        setKey("");
+                        state = KEY_REJECTED;
+                    } else {
+                        state = KEY_UNCHECKED;
+                    }
+                }
+            }
+            final int s = state;
+            final String m = message;
+            main.post(() -> check.done(s, m));
+        });
+    }
+
+    /**
+     * The client for the saved key. A model not yet settled for this key is picked from the
+     * service's own list; offline, the service's usual model stands in and the call itself
+     * reports any real problem. Blocking: worker thread only.
+     */
+    private Llm client(String key) {
+        if (prefs.getString("coachModel", "").isEmpty()) {
+            try {
+                Llm.Connection c = Llm.connect(key);
+                prefs.edit().putString("coachProvider", c.provider.id)
+                        .putString("coachModel", c.model).apply();
+            } catch (Llm.ApiException ignored) {
+                // offline or an odd reply: carry on with the usual model
+            }
+        }
+        return new Llm(provider(), model());
+    }
+
+    /**
+     * Encrypts and stores the key, then reads it back to be sure. The service it belongs to is
+     * worked out from its shape; the model is settled by {@link #checkKey} or on first use.
      *
      * @return false when it could not be stored (nothing changes then)
      */
     public boolean setKey(String key) {
         key = key == null ? "" : key.trim();
         if (key.isEmpty()) {
-            prefs.edit().remove("coachKey").apply();
+            prefs.edit().remove("coachKey").remove("coachProvider").remove("coachModel").apply();
             return true;
         }
         try {
@@ -279,6 +362,9 @@ public class Coach {
                 prefs.edit().putString("coachKey", before).commit();
                 return false;
             }
+            List<Provider> who = Provider.identify(key);
+            prefs.edit().putString("coachProvider", (who.isEmpty() ? Provider.DEEPSEEK : who.get(0)).id)
+                    .remove("coachModel").apply();
             return true;
         } catch (Exception e) {
             Log.w(TAG, "cannot store key", e);
@@ -445,7 +531,7 @@ public class Coach {
             String error = null;
             try {
                 p = planNow(reason);
-            } catch (DeepSeek.ApiException e) {
+            } catch (Llm.ApiException e) {
                 error = e.getMessage();
             }
             inFlight.decrementAndGet();
@@ -476,7 +562,7 @@ public class Coach {
                     Log.i(TAG, "model's harder plan wasn't harder; using the fallback");
                     p = null;
                 }
-            } catch (DeepSeek.ApiException e) {
+            } catch (Llm.ApiException e) {
                 Log.w(TAG, "harder via model failed: " + e.getMessage());
             }
             if (p == null) {
@@ -505,19 +591,19 @@ public class Coach {
     }
 
     /** Same as {@link #refreshPlan} on the calling (background) thread, for the morning job. */
-    CoachLogic.Plan planNow(String reason) throws DeepSeek.ApiException {
+    CoachLogic.Plan planNow(String reason) throws Llm.ApiException {
         return planNow(reason, "asked the coach for a new plan");
     }
 
     /** {@code change} goes in the plan's history when today already had a plan; null: nothing. */
-    private CoachLogic.Plan planNow(String reason, String change) throws DeepSeek.ApiException {
+    private CoachLogic.Plan planNow(String reason, String change) throws Llm.ApiException {
         CoachLogic.Plan rest = symptomRest();
         if (rest != null) {
             return rest;
         }
         String key = key();
         if (key == null) {
-            throw new DeepSeek.ApiException(401, "Add your DeepSeek API key in Coach settings");
+            throw new Llm.ApiException(401, "Add your API key in Coach settings");
         }
         CoachLogic.Settings s = settings();
         List<CoachLogic.SessionInfo> sessions = sessionsWithBreaks();
@@ -526,11 +612,12 @@ public class Coach {
         ZoneId zone = ZoneId.systemDefault();
         Map<String, Object> brief = CoachLogic.brief(s, sessions, tests(), r, storedPlan(),
                 extras(), now, zone);
-        String body = DeepSeek.body(CoachLogic.SYSTEM, CoachLogic.planPrompt(brief, reason), PLAN_TOKENS);
-        Map<String, Object> answer = call(key, body);
+        Llm.Request request = new Llm.Request(CoachLogic.SYSTEM,
+                CoachLogic.planPrompt(brief, reason), PLAN_TOKENS);
+        Map<String, Object> answer = call(key, request);
         CoachLogic.Plan p = CoachLogic.parsePlan(answer, today());
         if (p == null) {
-            throw new DeepSeek.ApiException(0, "The coach's plan could not be read");
+            throw new Llm.ApiException(0, "The coach's plan could not be read");
         }
         double[] loads = CoachLogic.recentLoads(sessions, now, zone);
         CoachLogic.guard(p, s, r, loads[1], loads[0], Prefs.SPORTS);
@@ -577,7 +664,7 @@ public class Coach {
             try {
                 String key = key();
                 if (key == null) {
-                    throw new DeepSeek.ApiException(401, "Add your DeepSeek API key first");
+                    throw new Llm.ApiException(401, "Add your API key first");
                 }
                 CoachLogic.Settings s = settings();
                 List<CoachLogic.SessionInfo> sessions = sessionsWithBreaks();
@@ -593,11 +680,11 @@ public class Coach {
                 // A message that may change training gets the reasoning pass; a plain
                 // question gets the quick answer.
                 boolean thinking = CoachLogic.needsThinking(text);
-                String body = DeepSeek.body(CoachLogic.SYSTEM,
+                Llm.Request request = new Llm.Request(CoachLogic.SYSTEM,
                         CoachLogic.askPrompt(brief, history.subList(
                                 Math.max(0, history.size() - CHAT_TURNS), history.size()), text),
                         thinking ? ASK_TOKENS : ASK_FAST_TOKENS, thinking);
-                a = CoachLogic.parseAsk(call(key, body), today());
+                a = CoachLogic.parseAsk(call(key, request), today());
                 if (a.plan != null) {
                     double[] loads = CoachLogic.recentLoads(sessions, now, zone);
                     CoachLogic.guard(a.plan, s, r, loads[1], loads[0], Prefs.SPORTS);
@@ -609,7 +696,7 @@ public class Coach {
                     a.reply = a.plan != null ? "Done \u2014 today's plan is updated." : "OK.";
                 }
                 addChat("coach", a.reply);
-            } catch (DeepSeek.ApiException e) {
+            } catch (Llm.ApiException e) {
                 error = e.getMessage();
             }
             inFlight.decrementAndGet();
@@ -665,7 +752,7 @@ public class Coach {
             try {
                 String key = key();
                 if (key == null) {
-                    throw new DeepSeek.ApiException(401, "No DeepSeek API key");
+                    throw new Llm.ApiException(401, "No API key");
                 }
                 List<CoachLogic.SessionInfo> sessions = sessionsWithBreaks();
                 List<CoachLogic.SessionInfo> history = new ArrayList<>();
@@ -686,11 +773,11 @@ public class Coach {
                         readiness(), null, extras(),
                         System.currentTimeMillis(), ZoneId.systemDefault(), refs);
                 CoachLogic.Plan plan = s.planTitle.isEmpty() ? null : storedPlan();
-                String body = DeepSeek.body(CoachLogic.SYSTEM,
+                Llm.Request request = new Llm.Request(CoachLogic.SYSTEM,
                         CoachLogic.debriefPrompt(brief, self, plan), DEBRIEF_TOKENS);
                 // Stored with the debrief: which sessions its question is about (the phone
                 // works them out from the refs), and whether it had the talk test answer.
-                Map<String, Object> answer = new java.util.LinkedHashMap<>(call(key, body));
+                Map<String, Object> answer = new java.util.LinkedHashMap<>(call(key, request));
                 answer.put("askIds", new ArrayList<Object>(CoachLogic.askTargets(
                         CoachLogic.parseDebrief(answer).askRefs, refs)));
                 answer.put("usedTalk", self.talk);
@@ -700,7 +787,7 @@ public class Coach {
                     fresh.coachNote = Json.write(answer);
                     SessionStore.save(appContext, fresh);
                 }
-            } catch (DeepSeek.ApiException e) {
+            } catch (Llm.ApiException e) {
                 error = e.getMessage();
             }
             deliver(cb, d, error);
@@ -745,7 +832,7 @@ public class Coach {
         prefs.edit().putString("coachChat", a.toString()).apply();
     }
 
-    /** The last request body sent to DeepSeek, exactly (no key in it), or null. */
+    /** The last request body sent to the AI service, exactly (no key in it), or null. */
     public String lastRequest() {
         return prefs.getString("coachLastRequest", null);
     }
@@ -768,9 +855,38 @@ public class Coach {
 
     // ------------------------------------------------------------------- data
 
-    private Map<String, Object> call(String key, String body) throws DeepSeek.ApiException {
-        prefs.edit().putString("coachLastRequest", body).apply();
-        return api.ask(key, body);
+    /**
+     * One request to the key's service. If the service says the chosen model is gone (404),
+     * the model is picked again from its list and the request is retried once.
+     */
+    private Map<String, Object> call(String key, Llm.Request request) throws Llm.ApiException {
+        Llm api = client(key);
+        try {
+            return send(api, key, request);
+        } catch (Llm.ApiException e) {
+            if (e.code != 404 || prefs.getString("coachModel", "").isEmpty()) {
+                throw e;
+            }
+            prefs.edit().remove("coachModel").apply();
+            Llm again = client(key);
+            if (again.model().equals(api.model())) {
+                throw e;
+            }
+            return send(again, key, request);
+        }
+    }
+
+    /** Sends, and keeps the exact body (no key in it) for "See the last message sent". */
+    private Map<String, Object> send(Llm api, String key, Llm.Request request)
+            throws Llm.ApiException {
+        try {
+            return api.ask(key, request);
+        } finally {
+            String body = api.lastBody;
+            if (body != null) {
+                prefs.edit().putString("coachLastRequest", body).apply();
+            }
+        }
     }
 
     /**

@@ -22,7 +22,7 @@ import java.util.Locale;
 /**
  * The coach on the watch: today's plan with Start / Not today / Shorter / Harder, and the
  * setup (key, goal, days, minutes, anything to work around, morning time). The plans, the
- * checks that keep them safe and the calls to DeepSeek are the phone app's own {@link Coach}.
+ * checks that keep them safe and the calls to the AI service are the phone app's own {@link Coach}.
  */
 public class WearCoachActivity extends Activity {
 
@@ -150,7 +150,7 @@ public class WearCoachActivity extends Activity {
         CoachLogic.Plan plan = coach.todayPlan();
 
         if (!coach.isEnabled()) {
-            p.addView(Wu.text(this, "The coach is off. Add your DeepSeek key to switch it on.",
+            p.addView(Wu.text(this, "The coach is off. Add an API key (OpenAI, Claude, Gemini or DeepSeek) to switch it on.",
                     17, Wu.TEXT, false));
             p.addView(Wu.space(this, 12));
         } else if (plan == null) {
@@ -364,7 +364,8 @@ public class WearCoachActivity extends Activity {
         p.addView(Wu.space(this, 8));
 
         keyInput = new EditText(this);
-        keyInput.setHint(coach.hasKey() ? "Key saved — type to replace" : "DeepSeek API key");
+        keyInput.setHint(coach.hasKey() ? "Key saved (" + coach.provider().shortName()
+                + ") — type to replace" : "API key (OpenAI, Claude, Gemini, DeepSeek)");
         keyInput.setHintTextColor(Wu.MUTED);
         keyInput.setTextColor(Wu.TEXT);
         keyInput.setSingleLine();
@@ -387,8 +388,9 @@ public class WearCoachActivity extends Activity {
         p.addView(cycle("Plan ready at", morningLabel(morning),
                 () -> morning = nextInt(MORNING, morning)));
         p.addView(Wu.space(this, 10));
-        p.addView(Wu.text(this, "Sent to DeepSeek: session totals, zones, splits, notes, "
-                + "age, sex, weight. Never GPS or your name.", 13, Wu.MUTED, false));
+        p.addView(Wu.text(this, "Sent to the service your key belongs to: session totals, "
+                + "zones, splits, notes, age, sex, weight. Never GPS or your name.", 13,
+                Wu.MUTED, false));
         p.addView(Wu.space(this, 12));
 
         Button save = Wu.button(this, "Save", Wu.ZONE[2], Wu.ON_ACCENT, 60);
@@ -444,12 +446,20 @@ public class WearCoachActivity extends Activity {
         String key = keyInput.getText().toString().trim();
         boolean keyOk = true;
         if (!key.isEmpty()) {
-            if (!key.startsWith("sk-")) {
+            if (Provider.identify(key).isEmpty()) {
                 keyOk = false;
-                Toast.makeText(this, "DeepSeek keys start with sk-", Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "Not an OpenAI, Claude, Gemini or DeepSeek key",
+                        Toast.LENGTH_LONG).show();
             } else if (!coach.setKey(key)) {
                 keyOk = false;
                 Toast.makeText(this, "Couldn't store the key", Toast.LENGTH_LONG).show();
+            } else {
+                final android.content.Context app = getApplicationContext();
+                coach.checkKey((state, message) -> Toast.makeText(app,
+                        state == Coach.KEY_OK ? "Using " + message
+                                : state == Coach.KEY_REJECTED ? "Key not saved: " + message
+                                : "Key saved, not checked: " + message,
+                        Toast.LENGTH_LONG).show());
             }
         }
         if (!keyOk) {
@@ -467,7 +477,7 @@ public class WearCoachActivity extends Activity {
         editing = false;
         error = null;
         if (!coach.hasKey()) {
-            Toast.makeText(this, "Saved. Add your DeepSeek key to switch the coach on",
+            Toast.makeText(this, "Saved. Add an API key to switch the coach on",
                     Toast.LENGTH_LONG).show();
         } else if (coach.isEnabled() && !coach.isPlanning()
                 && (changed || coach.todayPlan() == null || !key.isEmpty())) {

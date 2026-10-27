@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * Plain-JVM checks for the coach: JSON, plan checks, readiness, red flags, the brief, and the
- * DeepSeek client against a local stub server. Run with ./test.sh
+ * AI client against a local stub server (see also LlmTest). Run with ./test.sh
  */
 public final class CoachTest {
 
@@ -320,8 +320,8 @@ public final class CoachTest {
         eq("no text", false, CoachLogic.needsThinking(null));
 
         // the request body in each mode
-        String slow = DeepSeek.body("s", "u", 100);
-        String fast = DeepSeek.body("s", "u", 100, false);
+        String slow = Provider.DEEPSEEK.body("deepseek-flash", "s", "u", 100, true, 0);
+        String fast = Provider.DEEPSEEK.body("deepseek-flash", "s", "u", 100, false, 0);
         ok("default is the reasoning mode", slow.contains("\"enabled\"") && slow.contains("reasoning_effort"));
         ok("fast mode: reasoning off", fast.contains("\"disabled\"") && !fast.contains("reasoning_effort"));
         ok("fast mode still asks for JSON", fast.contains("json_object") && fast.contains("\"max_tokens\":100"));
@@ -949,9 +949,10 @@ public final class CoachTest {
                 "{\"error\":{\"message\":\"unknown field\"}}"));
         server.start();
         String base = "http://127.0.0.1:" + server.getAddress().getPort();
-        String body = DeepSeek.body(CoachLogic.SYSTEM, "plan as json", 500);
+        Llm.Request body = new Llm.Request(CoachLogic.SYSTEM, "plan as json", 500);
         try {
-            Map<String, Object> m = new DeepSeek(base + "/ok", 5000).ask("sk-test", body);
+            Map<String, Object> m = new Llm(Provider.DEEPSEEK, "deepseek-flash", base + "/ok", 5000)
+                    .ask("sk-test", body);
             eq("client parsed plan", "Easy run", Json.obj(m.get("today")).get("title"));
             eq("bearer key sent", "Bearer sk-test", lastAuth.get());
             Map<String, Object> sent = Json.parseObject(lastBody.get());
@@ -961,27 +962,29 @@ public final class CoachTest {
             eq("effort high", "high", sent.get("reasoning_effort"));
             ok("key not in body", !lastBody.get().contains("sk-test"));
 
-            Map<String, Object> f = new DeepSeek(base + "/flaky", 5000).ask("k", body);
+            Map<String, Object> f = new Llm(Provider.DEEPSEEK, "deepseek-flash", base + "/flaky",
+                    5000).ask("k", body);
             eq("retried empty, then read fenced json", "hi", f.get("reply"));
             eq("two calls", 2, calls.get());
 
             try {
-                new DeepSeek(base + "/denied", 5000).ask("k", body);
+                new Llm(Provider.DEEPSEEK, "deepseek-flash", base + "/denied", 5000).ask("k", body);
                 ok("401 throws", false);
-            } catch (DeepSeek.ApiException e) {
+            } catch (Llm.ApiException e) {
                 eq("401 code", 401, e.code);
                 ok("401 explained", e.getMessage().contains("API key"));
             }
             try {
-                new DeepSeek(base + "/bad", 5000).ask("k", body);
+                new Llm(Provider.DEEPSEEK, "deepseek-flash", base + "/bad", 5000).ask("k", body);
                 ok("400 throws", false);
-            } catch (DeepSeek.ApiException e) {
+            } catch (Llm.ApiException e) {
                 ok("400 detail", e.getMessage().contains("unknown field"));
             }
             try {
-                new DeepSeek("http://127.0.0.1:1/x", 2000).ask("k", body);
+                new Llm(Provider.DEEPSEEK, "deepseek-flash", "http://127.0.0.1:1/x", 2000)
+                        .ask("k", body);
                 ok("unreachable throws", false);
-            } catch (DeepSeek.ApiException e) {
+            } catch (Llm.ApiException e) {
                 ok("unreachable explained", e.getMessage().contains("connection"));
             }
         } finally {

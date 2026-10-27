@@ -2,6 +2,7 @@ package com.enftc.hrbuzz;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.content.Context;
 import android.content.SharedPreferences;
 import android.graphics.Typeface;
 import android.os.Bundle;
@@ -23,7 +24,8 @@ import org.json.JSONObject;
 import java.util.Locale;
 
 /**
- * Coach setup and privacy in one place: on/off, the DeepSeek key, four tap-only questions,
+ * Coach setup and privacy in one place: on/off, the API key (OpenAI, Claude, Gemini or
+ * DeepSeek, recognised from the key), four tap-only questions,
  * the morning time, exactly what is sent, the last request, and "forget everything".
  */
 public class CoachSetupActivity extends Activity {
@@ -40,6 +42,10 @@ public class CoachSetupActivity extends Activity {
 
     private Switch onSwitch;
     private EditText keyInput;
+    /** Which service and model the saved key uses. */
+    private TextView serviceText;
+    /** What the key being typed looks like, before it is saved. */
+    private TextView detectText;
     private String goal;
     private int days;
     private int minutes;
@@ -80,19 +86,93 @@ public class CoachSetupActivity extends Activity {
         onSwitch = new Switch(this);
         onSwitch.setChecked(prefs.getBoolean("coachOn", false) || !prefs.getBoolean("coachSetUp", false));
         row.addView(onSwitch);
-        LinearLayout model = row(card, "Model");
-        model.addView(Ui.text(this, "DeepSeek Flash", 15, 0xFFC8C8CE));
-        TextView keyLabel = Ui.text(this, "Your DeepSeek API key", 15, Ui.TEXT);
+        LinearLayout model = row(card, "Service");
+        serviceText = Ui.text(this, serviceLine(), 15, 0xFFC8C8CE);
+        serviceText.setGravity(Gravity.END);
+        model.addView(serviceText);
+        TextView keyLabel = Ui.text(this, "Your API key", 15, Ui.TEXT);
         keyLabel.setPadding(0, Ui.dp(this, 8), 0, 0);
         card.addView(keyLabel);
         keyInput = new EditText(this);
         keyInput.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_VARIATION_PASSWORD);
         keyInput.setTextColor(Ui.TEXT);
-        keyInput.setHint(coach.hasKey() ? "Saved \u2014 type a new one to replace it" : "sk-\u2026");
+        keyInput.setHint(coach.hasKey() ? "Saved \u2014 paste a new one to replace it"
+                : "Paste a key");
         keyInput.setSingleLine();
         card.addView(keyInput);
-        hint(card, "Get one at platform.deepseek.com (API keys). It is encrypted with a key "
-                + "held by Android's keystore and only ever sent to api.deepseek.com.");
+        detectText = Ui.text(this, "", 13, Ui.TEXT2);
+        card.addView(detectText);
+        TextView checkKey = Ui.chip(this, "Check the key");
+        checkKey.setMinHeight(Ui.dp(this, 44));
+        checkKey.setOnClickListener(v -> {
+            String k = keyInput.getText().toString().replaceAll("\\s+", "");
+            if (k.isEmpty()) {
+                detectText.setText("Paste a key first.");
+            } else if (Provider.identify(k).isEmpty()) {
+                detectText.setText("Not a key HR Buzz recognises (it works with OpenAI, Claude, "
+                        + "Gemini and DeepSeek keys).");
+            } else if (coach.setKey(k)) {
+                keyInput.setText("");
+                keyInput.setHint("Saved — paste a new one to replace it");
+                serviceText.setText(serviceLine());
+                verifyKey();
+            } else {
+                detectText.setText("Couldn't store the key on this phone.");
+            }
+        });
+        LinearLayout.LayoutParams checkLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        checkLp.topMargin = Ui.dp(this, 6);
+        card.addView(checkKey, checkLp);
+        keyInput.addTextChangedListener(new android.text.TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+            }
+
+            @Override
+            public void afterTextChanged(android.text.Editable s) {
+                String k = s.toString().replaceAll("\\s+", "");
+                java.util.List<Provider> who = Provider.identify(k);
+                detectText.setText(k.isEmpty() ? "" : who.isEmpty()
+                        ? "Not a key HR Buzz recognises (it works with OpenAI, Claude, Gemini "
+                        + "and DeepSeek keys)"
+                        : "Looks like a " + who.get(0).label + " key. HR Buzz checks it when "
+                        + "you save and picks the model.");
+            }
+        });
+        hint(card, "Paste an API key from OpenAI (ChatGPT), Claude, Gemini or DeepSeek. HR Buzz "
+                + "works out which one it is, checks it and chooses the model itself. The key "
+                + "is encrypted with a key held by Android's keystore and only ever sent to "
+                + "that service over HTTPS.");
+        TextView getKey = Ui.text(this, "Need a key? Open the page where you create one:", 13,
+                Ui.TEXT2);
+        getKey.setPadding(0, Ui.dp(this, 8), 0, Ui.dp(this, 4));
+        card.addView(getKey);
+        LinearLayout keyLinks = new LinearLayout(this);
+        for (Provider p : Provider.all()) {
+            TextView chip = Ui.chip(this, p.shortName());
+            chip.setMinHeight(Ui.dp(this, 44));
+            chip.setOnClickListener(v -> openUrl(p.keyPage));
+            keyLinks.addView(chip);
+        }
+        HorizontalScrollView links = new HorizontalScrollView(this);
+        links.setHorizontalScrollBarEnabled(false);
+        links.addView(keyLinks);
+        card.addView(links);
+        TextView guide = Ui.text(this, "Step by step: how to get a key, and what it costs", 15,
+                0xFF4F8EF7);
+        guide.setPadding(0, Ui.dp(this, 12), 0, Ui.dp(this, 4));
+        guide.setOnClickListener(v -> openUrl(Provider.GUIDE_URL));
+        card.addView(guide);
+        hint(card, "A coach usually costs from a few cents to a few dollars a month, depending "
+                + "on the service; the guide has the current figures. Why a key and not a "
+                + "sign-in? A ChatGPT, Claude or Gemini subscription covers that company's own "
+                + "app. Other apps use API keys, billed by use, and Anthropic does not allow "
+                + "other apps to sign in with a Claude account.");
 
         // ---- the four questions
         section(root, "1 \u00b7 What for?");
@@ -228,8 +308,8 @@ public class CoachSetupActivity extends Activity {
     private boolean savedByButton;
 
     /**
-     * Stores everything on the screen. The key is only stored when it looks like a DeepSeek
-     * key; the rest always is.
+     * Stores everything on the screen. The key is only stored when it looks like one from a
+     * service HR Buzz knows (then checked in the background); the rest always is.
      *
      * @param loud show what still needs doing (the button) rather than staying quiet (leaving)
      * @return true when the coach is ready to use, or deliberately switched off
@@ -237,14 +317,18 @@ public class CoachSetupActivity extends Activity {
     private boolean persist(boolean loud) {
         String key = keyInput.getText().toString().replaceAll("\\s+", "");
         boolean keyOk = true;
+        boolean newKey = false;
         if (!key.isEmpty()) {
-            if (!key.startsWith("sk-")) {
+            if (Provider.identify(key).isEmpty()) {
                 keyOk = false;
-                Toast.makeText(this, "Key not saved: DeepSeek keys start with sk-",
-                        Toast.LENGTH_LONG).show();
+                Toast.makeText(this, "Key not saved: it is not an OpenAI, Claude, Gemini or "
+                        + "DeepSeek key", Toast.LENGTH_LONG).show();
             } else if (coach.setKey(key)) {
                 keyInput.setText("");
-                keyInput.setHint("Saved \u2014 type a new one to replace it");
+                keyInput.setHint("Saved \u2014 paste a new one to replace it");
+                serviceText.setText(serviceLine());
+                newKey = true;
+                verifyKey();
             } else {
                 keyOk = false;
                 Toast.makeText(this, "Couldn't store the key on this phone", Toast.LENGTH_LONG)
@@ -275,13 +359,14 @@ public class CoachSetupActivity extends Activity {
         coach.schedule();
         if (on && !coach.hasKey()) {
             if (loud && keyOk) {
-                Toast.makeText(this, "Saved. Add your DeepSeek API key to switch the coach on",
+                Toast.makeText(this, "Saved. Add an API key to switch the coach on",
                         Toast.LENGTH_LONG).show();
             }
             return false;
         }
-        if (coach.isEnabled() && !coach.isPlanning()
-                && (changed || coach.todayPlan() == null || !key.isEmpty())) {
+        // A key just pasted plans only once the service has accepted it (see verifyKey).
+        if (coach.isEnabled() && !coach.isPlanning() && !newKey
+                && (changed || coach.todayPlan() == null)) {
             coach.refreshPlan(changed ? "They just changed their goal or availability."
                     : "They just set up the coach.", null);
         }
@@ -292,6 +377,48 @@ public class CoachSetupActivity extends Activity {
             Toast.makeText(this, "Coach saved", Toast.LENGTH_SHORT).show();
         }
         return true;
+    }
+
+    /**
+     * Asks the saved key's service whether it accepts the key and which model to use, and says
+     * so here. If the screen has already been left, a toast is the best that is left. Once
+     * the key is accepted (or could not be checked, offline) the first plan is requested.
+     */
+    private void verifyKey() {
+        final Context app = getApplicationContext();
+        detectText.setText("Checking the key…");
+        coach.checkKey((state, message) -> {
+            String line = state == Coach.KEY_OK ? "Using " + message
+                    : state == Coach.KEY_REJECTED ? "Key not saved: " + message
+                    : "Key saved, but could not be checked right now: " + message;
+            if (!isDestroyed() && !isFinishing()) {
+                detectText.setText(line);
+                serviceText.setText(serviceLine());
+                keyInput.setHint(coach.hasKey() ? "Saved — paste a new one to replace it"
+                        : "Paste a key");
+            } else {
+                Toast.makeText(app, line, Toast.LENGTH_LONG).show();
+            }
+            if (state != Coach.KEY_REJECTED && coach.isEnabled() && !coach.isPlanning()
+                    && coach.todayPlan() == null) {
+                coach.refreshPlan("They just set up the coach.", null);
+            }
+        });
+    }
+
+    /** "Claude (Anthropic) · claude-haiku-5-5", or a prompt when there is no key yet. */
+    private String serviceLine() {
+        String line = coach.serviceLine();
+        return line == null ? "Not set up yet" : line;
+    }
+
+    private void openUrl(String url) {
+        try {
+            startActivity(new android.content.Intent(android.content.Intent.ACTION_VIEW,
+                    android.net.Uri.parse(url)));
+        } catch (android.content.ActivityNotFoundException e) {
+            Toast.makeText(this, "Open " + url + " in a browser", Toast.LENGTH_LONG).show();
+        }
     }
 
     private void showLastRequest() {
@@ -314,7 +441,7 @@ public class CoachSetupActivity extends Activity {
         ScrollView sv = new ScrollView(this);
         sv.addView(t);
         new AlertDialog.Builder(this)
-                .setTitle("Last message to DeepSeek")
+                .setTitle("Last message to " + coach.provider().shortName())
                 .setView(sv)
                 .setPositiveButton("Close", null)
                 .show();

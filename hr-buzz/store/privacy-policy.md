@@ -1,8 +1,8 @@
 # HR Buzz privacy policy
 
-_Last updated: 2026-10-27. Developer: [your name], contact: [contact email]._
+_Last updated: 27 October 2026. Published by ENFTC. Contact: privacy@sourdoughcalculator.uk._
 
-HR Buzz is a heart-rate training app for Bluetooth chest straps. It has no account, no ads and no analytics, and it does not send anything to the developer. Everything it records stays on your phone unless you turn on the optional features described below.
+HR Buzz ("the app"; "we" below means ENFTC, its publisher) is a heart-rate training app for Bluetooth chest straps. It has no account, no ads and no analytics, and it does not send anything to us. Everything it records stays on your phone unless you turn on the optional features described below.
 
 ## What the app handles
 
@@ -17,14 +17,14 @@ HR Buzz is a heart-rate training app for Bluetooth chest straps. It has no accou
 
 ## Optional coach (off by default)
 
-If you set up the coach, HR Buzz sends training information to **DeepSeek** (`api.deepseek.com`), a third-party AI service, using **your own** API key, so it can write plans and post-session comments. This is the only time the app uses the network.
+If you set up the coach, HR Buzz sends training information to the third-party AI service **you choose** by pasting your own API key: **OpenAI** (ChatGPT, `api.openai.com`), **Anthropic** (Claude, `api.anthropic.com`), **Google** (Gemini, `generativelanguage.googleapis.com`) or **DeepSeek** (`api.deepseek.com`). It uses it to write plans and post-session comments. HR Buzz recognises which service a key belongs to, asks that service which models the key can use, and picks one; it contacts only that service. This is the only time the app uses the network.
 
 - **Sent:** session totals (date, sport, duration, distance, average and maximum heart rate, minutes per zone, kilometre splits, training load, how you felt, talk test, notes), trends calculated from them, resting-test results, check-ins, the coach's plan history and what it keeps in mind, Health Connect daily totals if you turned them on, and your age, sex, weight and max heart rate.
 - **Never sent:** GPS or location, second-by-second heart rate, RR data, your name.
 - You can see the exact last request in Coach settings ("See the last message sent").
-- DeepSeek handles that data under its own terms and privacy policy; read them before turning the coach on.
+- The service you chose handles that data under its own terms and privacy policy (OpenAI, Anthropic, Google or DeepSeek); read them before turning the coach on.
 - Messages that mention chest pain, fainting, palpitations and similar symptoms are not sent: the phone answers them itself.
-- Your API key is stored encrypted with an Android Keystore key and is sent only to `api.deepseek.com` over HTTPS.
+- Your API key is stored encrypted with an Android Keystore key and is sent only to the service it belongs to, over HTTPS.
 
 ## Health Connect
 
@@ -36,7 +36,7 @@ HR Buzz shares nothing on its own. You can export a session as TCX or GPX and se
 
 ## Keeping and deleting data
 
-Data lives in the app's private storage. "Delete everything the coach remembers" clears the coach's plan, chat, notes, check-ins and request log. Uninstalling the app deletes everything it stored. Data already sent to DeepSeek is outside the app's control; contact DeepSeek about it.
+Data lives in the app's private storage. "Delete everything the coach remembers" clears the coach's plan, chat, notes, check-ins and request log. Uninstalling the app deletes everything it stored. Data already sent to the AI service you chose is outside the app's control; contact that service about it.
 
 ## Not medical advice
 
@@ -48,4 +48,4 @@ HR Buzz is not directed at children under 13.
 
 ## Changes and contact
 
-If this policy changes, the date above changes and the new text is in the app's listing. Questions: [contact email].
+If this policy changes, the date above changes and the new text is published at this address. Questions or requests: privacy@sourdoughcalculator.uk.

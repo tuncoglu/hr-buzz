@@ -8,9 +8,9 @@
 
 ## Data safety
 Data collected / shared, all with "optional" where the user turns it on:
-- **Health info and Fitness info** (heart rate, workouts, steps, sleep): collected. Shared with a third party (DeepSeek) only when the coach is turned on; purpose: app functionality / personalisation. Encrypted in transit: yes. Users can request deletion: yes (in-app delete for the coach; uninstall for everything).
+- **Health info and Fitness info** (heart rate, workouts, steps, sleep): collected. Shared with a third party (the AI service whose key the person pastes: OpenAI, Anthropic, Google or DeepSeek) only when the coach is turned on; purpose: app functionality / personalisation. Encrypted in transit: yes. Users can request deletion: yes (in-app delete for the coach; uninstall for everything).
 - **Precise location:** collected for outdoor sessions; **not shared**, stays on device.
-- **Personal info (age, sex, weight):** as above, shared with DeepSeek only when the coach is on.
+- **Personal info (age, sex, weight):** as above, shared with that AI service only when the coach is on.
 - No data is shared for advertising or analytics; no data is sold.
 - Because the data stays on the device unless the coach is on, "collected" for the on-device items depends on how Play defines it: data processed only on device and never sent need not be declared as collected. Read the form's help text for that case.
 

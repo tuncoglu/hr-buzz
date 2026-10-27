@@ -47,7 +47,7 @@ What Beat 3.5.13 does, and where it is here:
 - **RR intervals** are recorded (in the session CSV) for later HRV analysis.
 - **Battery prompt.** A one-tap request for unrestricted battery use, so Pixel battery management doesn't kill long runs.
 
-## Coach (optional, DeepSeek)
+## Coach (optional, your own AI key)
 
 An LLM coach built to take as little effort as possible. It talks first, and you mostly tap:
 
@@ -77,10 +77,14 @@ Privacy, as shown in Coach settings:
 
 - **Sent:** session totals (date, sport, time, distance, average/max HR, minutes per zone, km splits, load, feeling, talk test, notes) and trends computed from them, fitness-test resting HR/HRV/VO2max, check-ins, the plan's two-week history, what the coach keeps in mind, Health Connect daily totals if on, and age, sex, weight, max HR (and its source) and your setup answers.
 - **Never sent:** GPS or location, second-by-second HR, RR data, your name.
-- **Your key:** stored encrypted with an Android keystore key and only sent to `api.deepseek.com` over HTTPS (cleartext is disabled app-wide).
+- **Your key:** stored encrypted with an Android keystore key and only sent to the service it belongs to (`api.openai.com`, `api.anthropic.com`, `generativelanguage.googleapis.com` or `api.deepseek.com`) over HTTPS (cleartext is disabled app-wide).
 - **Controls:** *See the last message sent* shows the exact request. *Delete everything the coach remembers* wipes the plan and its history, the conversation, what it keeps in mind, the check-ins, the request log and the debriefs.
 
-Model: `deepseek-flash` via `https://api.deepseek.com/chat/completions`, with JSON output mode and thinking on (high effort), so plans and debriefs are reasoned through. The model is called only at four moments: the morning plan, after Finish, Sunday, and when you ask. You need your own DeepSeek API key (platform.deepseek.com).
+**Bring your own key.** Paste an API key from OpenAI (ChatGPT), Claude, Gemini or DeepSeek and the app works out the rest: the key's shape says which service it is (`sk-ant-` Claude, `AIza` Gemini, `sk-` plus 32 hex digits DeepSeek, any other `sk-` OpenAI; where an `sk-` key could be two, both are asked), the service's own model list says what the key can reach, and the newest model of the small tier is chosen (a Haiku, a "luna" or "mini", a "flash"; DeepSeek keeps `deepseek-flash`), the tier the coach was built on. That is about 30 cents to a few dollars a month at the app's usual four or five requests a day (measured at about 42,000 input and 11,500 output tokens a day); `store/api-keys.md`, published at https://hrbuzz.sourdoughcalculator.uk/keys/, has the per-service figures and how to get each key. Each service then gets its own request: JSON mode where there is one and a JSON-only instruction where there is not, and the service's own "think first" setting for the reasoning pass (OpenAI `reasoning_effort`, Claude adaptive thinking with `effort`, Gemini `thinkingConfig`, DeepSeek `thinking`). If a model refuses an optional setting, the request is repeated with fewer of them, so a model released later still works; if a chosen model disappears, the next request picks again. Coach settings shows the service and model in use, and "See the last message sent" shows the exact request.
+
+There is no "sign in with your ChatGPT / Claude / Gemini account": those subscriptions cover the companies' own apps, other apps use API keys billed by use, and Anthropic's terms do not allow third-party apps to sign in with a Claude account. The coach makes a handful of requests a day. Settings has links to each service's key page.
+
+The model is called only at four moments: the morning plan, after Finish, Sunday, and when you ask.
 
 ## Move minutes (optional, Health Connect)
 
@@ -90,7 +94,7 @@ Settings → Activity → **Move minutes** reads your steps and workouts from He
 - **Our own count.** Fit's "Move Minutes" has no Health Connect equivalent, so a minute counts when it has at least 50 steps or falls inside a workout (HR Buzz's own sessions count too). Steps written by two devices for the same walk are not added together. It will be close to what Fit showed, not identical.
 - **Sleep, distance and heart data.** If you also allow them, the last 14 days of sleep (hours, when you fell asleep and woke), steps, km, resting heart rate and HRV are read for the coach. Steps and workouts are all move minutes need; the rest is optional (Settings → Activity → *Allow sleep, distance and heart data*).
 - **Read-only.** Nothing is written to Health Connect. Health Connect only allows reading while the app is open, so the data is refreshed when you open HR Buzz and the morning plan uses the last read.
-- **Privacy.** On the phone, plus, if the coach is on, the daily totals sent to DeepSeek (never the records, times or workouts behind them). Turning it off forgets them.
+- **Privacy.** On the phone, plus, if the coach is on, the daily totals sent to the coach's AI service (never the records, times or workouts behind them). Turning it off forgets them.
 
 ## Zones and calories
 
@@ -175,7 +179,8 @@ Requires `ANDROID_HOME` (defaults to `/opt/android-sdk`) and a JDK (`JAVA_HOME`,
 | `src/.../LineChartView.java`, `ZoneBarsView.java`, `ZoneStripView.java`, `RouteView.java` | Hand-drawn charts |
 | `src/.../Json.java` | Small JSON reader/writer, so the coach logic runs on a plain JVM |
 | `src/.../CoachLogic.java` | Coach brain on the phone: what the model sees, prompts, reading answers, plan checks, readiness, red flags, step limits. Pure Java, tested |
-| `src/.../DeepSeek.java` | Chat-completions client (java.net, JSON mode, retry on empty). Tested against a local stub server |
+| `src/.../Provider.java` | The four AI services: key recognition, endpoints, request and reply shapes, model choice, error wording. Pure Java |
+| `src/.../Llm.java` | The client over `Provider` (java.net, retry on empty, fewer settings when one is refused, key check). Tested against local stub servers |
 | `src/.../Coach.java` | Coach on Android: settings, encrypted key, plan, conversation, morning job scheduling |
 | `src/.../CoachJob.java` | Morning plan job + notification |
 | `src/.../CoachActivity.java`, `CoachSetupActivity.java` | Coach screen (week, next days, conversation) and setup/privacy |

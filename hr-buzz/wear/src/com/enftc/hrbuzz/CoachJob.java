@@ -42,7 +42,7 @@ public class CoachJob extends JobService {
                     p = coach.planNow(reason);
                 }
                 post(this, p);
-            } catch (DeepSeek.ApiException e) {
+            } catch (Llm.ApiException e) {
                 Log.w("HRBuzz", "morning plan failed: " + e.getMessage());
                 postError(this, e.getMessage());
             } finally {

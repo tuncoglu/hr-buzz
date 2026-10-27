@@ -335,6 +335,12 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
         startSession();
     }
 
+    private final Runnable planPoll = () -> {
+        if (!isFinishing() && !isDestroyed()) {
+            showCoach();
+        }
+    };
+
     private void showCoach() {
         showCoachCard();
         // The check-in comes after the plan: the plan is what they opened the app for.
@@ -353,7 +359,8 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
             coachCard.addView(label("COACH"));
             coachCard.addView(gap(Ui.text(this, "A coach that plans each day around your goal, "
                     + "sets your heart rate alerts for you and talks you through the session. "
-                    + "Uses DeepSeek; off until you set it up.", 15, 0xFFC8C8CE), 6));
+                    + "Uses the AI service you choose (OpenAI, Claude, Gemini or DeepSeek) with "
+                    + "your own API key; off until you set it up.", 15, 0xFFC8C8CE), 6));
             Button setup = secondary("Set up the coach");
             setup.setOnClickListener(v -> startActivity(new Intent(this, CoachSetupActivity.class)));
             coachCard.addView(setup, btnLp(10));
@@ -384,6 +391,10 @@ public class MainActivity extends Activity implements HrManager.Listener, Record
         if (plan == null) {
             if (coach.isPlanning()) {
                 coachCard.addView(gap(Ui.text(this, "Planning your day\u2026", 17, Ui.TEXT), 6));
+                // A plan can be started from another screen (setup), with nobody to tell this
+                // card when it ends: look again until it has.
+                coachCard.removeCallbacks(planPoll);
+                coachCard.postDelayed(planPoll, 1500);
                 return;
             }
             coachCard.addView(gap(Ui.text(this, coachError != null ? coachError

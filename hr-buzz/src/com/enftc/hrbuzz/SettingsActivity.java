@@ -275,7 +275,7 @@ public class SettingsActivity extends Activity {
         hint(card(root), "HR Buzz " + version() + ". No account. Sessions stay on the phone "
                 + "until you export them (TCX/GPX from a session's summary). The internet is "
                 + "used only by the coach, when you turn it on: it sends a summary of your "
-                + "training to DeepSeek.");
+                + "training to the AI service whose key you gave it.");
 
         setContentView(scroll);
     }

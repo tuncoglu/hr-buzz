@@ -24,7 +24,8 @@ public class HealthPrivacyActivity extends Activity {
                 + "working out. Nothing is written to Health Connect."));
         root.addView(para("The count is kept on the phone. If you use the coach, the daily "
                 + "totals (minutes only, never the steps, times or workouts themselves) are "
-                + "sent to DeepSeek with the rest of your training summary, so the coach "
+                + "sent to the AI service you chose for the coach with the rest of your "
+                + "training summary, so the coach "
                 + "knows how active you are between sessions."));
         root.addView(para("Turn it off in HR Buzz's Settings, or remove the permissions in "
                 + "Health Connect, and HR Buzz stops reading and forgets the last count."));
