@@ -1,14 +1,24 @@
 # Sourced by the release builds. make_bundle <manifest> <res.zip> <classes.dex> <out dir> <out.aab>
 # links the resources in protobuf form, lays them out as a base module, builds the Android App
 # Bundle with bundletool and signs it with the upload key (signing.sh must be sourced first).
-# bundletool is a standalone jar (github.com/google/bundletool/releases, bundletool-all-*.jar).
+# bundletool: a standalone jar (github.com/google/bundletool/releases, bundletool-all-*.jar) at
+# ~/.cache/polar-hr-toolchain/bundletool.jar, or a launcher script named bundletool beside it that
+# runs the jars Gradle already downloaded (any Android Gradle build leaves them in ~/.gradle).
 make_bundle() {
     local manifest="$1" reszip="$2" dex="$3" out="$4" aab="$5"
-    local tool="${BUNDLETOOL:-$HOME/.cache/polar-hr-toolchain/bundletool.jar}"
-    if [ ! -f "$tool" ]; then
-        echo "bundletool not found at $tool (set BUNDLETOOL); built the APK only." >&2
+    # A bundletool-all jar, or the launcher that runs the jars Gradle downloaded (see below).
+    local tool="${BUNDLETOOL:-}"
+    if [ -z "$tool" ]; then
+        for t in "$HOME/.cache/polar-hr-toolchain/bundletool.jar" "$HOME/.cache/polar-hr-toolchain/bundletool"; do
+            [ -f "$t" ] && { tool="$t"; break; }
+        done
+    fi
+    if [ -z "$tool" ] || [ ! -f "$tool" ]; then
+        echo "bundletool not found (set BUNDLETOOL to a bundletool-all jar or a launcher); built the APK only." >&2
         return 0
     fi
+    local run=("$tool")
+    [[ "$tool" == *.jar ]] && run=(java -jar "$tool")
     echo "==> bundle"
     "$BT/aapt2" link --proto-format \
         -o "$out/base-proto.apk" \
@@ -40,7 +50,7 @@ with zipfile.ZipFile('../base.zip', 'w', zipfile.ZIP_DEFLATED) as z:
             p = os.path.join(root, f)
             z.write(p, os.path.relpath(p, '.'))
 ")
-    java -jar "$tool" build-bundle --modules="$out/base.zip" --output="$aab"
+    "${run[@]}" build-bundle --modules="$out/base.zip" --output="$aab"
     jarsigner -keystore "$UPLOAD_KEYSTORE" -storepass "$UPLOAD_PASS" -keypass "$UPLOAD_PASS" \
         -sigalg SHA256withRSA -digestalg SHA-256 "$aab" "$UPLOAD_ALIAS" >/dev/null
     # jarsigner exits 0 even for an unsigned file, so read its words, not its exit code.

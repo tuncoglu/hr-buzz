@@ -150,14 +150,21 @@ You can still run Polar Beat or Strava alongside it: an H10 with "2 Bluetooth co
 
 ## Build
 
-No Gradle, no Android Studio, no AndroidX. The build is a shell script over the SDK tools:
+No Gradle, no Android Studio, no AndroidX. The builds are shell scripts over the SDK tools:
 
 ```bash
-./build.sh          # -> hr-buzz.apk
-./test.sh           # plain-JVM tests: decode, alarm, zones, calories, stats, splits, export
+./test.sh                     # plain-JVM tests: decode, alarm, zones, calories, stats, splits, export, AI services, reports
+DEBUG_BUILD=1 ./build.sh      # -> hr-buzz.apk: debuggable (adb run-as), signed with a local debug key; for the phone on your desk
+./build.sh                    # -> hr-buzz-release.apk and hr-buzz-release.aab: never debuggable, signed with the upload key
+DEBUG_BUILD=1 ./build-wear.sh # the watch app, same two modes (hr-buzz-wear.apk, hr-buzz-wear-release.apk/.aab)
+VERSION_CODE=4 VERSION_NAME=2.2 ./build.sh   # Play needs a higher version code for every upload
 ```
 
-Requires `ANDROID_HOME` (defaults to `/opt/android-sdk`) and a JDK (`JAVA_HOME`, defaults to `~/.cache/polar-hr-toolchain/jdk`). compileSdk 36, minSdk 31, targetSdk 34.
+Requires `ANDROID_HOME` (defaults to `/opt/android-sdk`) and a JDK (`JAVA_HOME`, defaults to `~/.cache/polar-hr-toolchain/jdk`). compileSdk 37, minSdk 31 (watch 34), targetSdk 37.
+
+**Release signing.** Run `./make-upload-key.sh` once: it makes the Play upload key in `~/.config/hrbuzz-signing/` (outside the repo and outside `~/.cache`). Back that folder up somewhere off the machine; if it is lost, Play support has to reset the upload key. Release builds refuse to run without it, and refuse to keep a build that turns out debuggable.
+
+**Bundles.** The `.aab` step needs bundletool: either a `bundletool-all-*.jar` saved as `~/.cache/polar-hr-toolchain/bundletool.jar`, or a launcher script `bundletool` beside it that runs the jars Gradle has already downloaded into `~/.gradle` (bundletool 1.18.3 with Guava 32.0.1-jre; the Android flavour of Guava crashes it). Without either, a release build makes the APK only and says so.
 
 ## Layout
 

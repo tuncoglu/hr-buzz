@@ -2,3 +2,4 @@ build/
 build-wear/
 gen/
 *.apk
+*.aab
