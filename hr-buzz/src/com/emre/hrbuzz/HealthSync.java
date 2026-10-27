@@ -15,6 +15,7 @@ import android.health.connect.datatypes.Record;
 import android.health.connect.datatypes.RestingHeartRateRecord;
 import android.health.connect.datatypes.SleepSessionRecord;
 import android.health.connect.datatypes.StepsRecord;
+import android.os.Build;
 import android.os.OutcomeReceiver;
 import android.util.Log;
 
@@ -66,8 +67,13 @@ final class HealthSync {
     private HealthSync() {
     }
 
+    /**
+     * Health Connect is part of the system from Android 14. The version check comes first:
+     * on 12 and 13 {@code HealthConnectManager} does not exist, and merely naming the class
+     * would throw.
+     */
     static boolean available(Context c) {
-        return c.getSystemService(HealthConnectManager.class) != null;
+        return Build.VERSION.SDK_INT >= 34 && c.getSystemService(HealthConnectManager.class) != null;
     }
 
     /** True when move minutes can be read; the optional data may still be missing. */
@@ -150,10 +156,10 @@ final class HealthSync {
      * Health Connect is missing or not allowed, else the fresh summary.
      */
     static Move.Summary sync(Context c) {
-        HealthConnectManager hc = c.getSystemService(HealthConnectManager.class);
-        if (hc == null || !granted(c)) {
+        if (!available(c) || !granted(c)) {
             return null;
         }
+        HealthConnectManager hc = c.getSystemService(HealthConnectManager.class);
         ZoneId zone = ZoneId.systemDefault();
         long now = System.currentTimeMillis();
         LocalDate today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate();
