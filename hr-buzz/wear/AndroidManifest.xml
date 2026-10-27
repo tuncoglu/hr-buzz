@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.emre.hrbuzz">
+    package="com.enftc.hrbuzz">
 
     <!-- The watch's own optical heart rate sensor. Android 16 moved it to the health permission. -->
     <uses-permission android:name="android.permission.BODY_SENSORS" />

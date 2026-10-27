@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
-    package="com.emre.hrbuzz">
+    package="com.enftc.hrbuzz">
 
     <!-- Android 12+ Bluetooth permissions. neverForLocation: we never derive location from BLE. -->
     <uses-permission
@@ -140,7 +140,7 @@
 
         <provider
             android:name=".ExportProvider"
-            android:authorities="com.emre.hrbuzz.export"
+            android:authorities="com.enftc.hrbuzz.export"
             android:exported="false"
             android:grantUriPermissions="true" />
     </application>

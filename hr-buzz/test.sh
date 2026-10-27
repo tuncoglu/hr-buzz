@@ -10,25 +10,25 @@ rm -rf build/test-classes
 mkdir -p build/test-classes
 
 javac -d build/test-classes \
-    src/com/emre/hrbuzz/HrLogic.java \
-    src/com/emre/hrbuzz/Training.java \
-    src/com/emre/hrbuzz/Export.java \
-    src/com/emre/hrbuzz/Json.java \
-    src/com/emre/hrbuzz/CoachLogic.java \
-    src/com/emre/hrbuzz/DeepSeek.java \
-    src/com/emre/hrbuzz/Import.java \
-    src/com/emre/hrbuzz/Move.java \
-    wear/src/com/emre/hrbuzz/WearLogic.java \
-    test/com/emre/hrbuzz/HrLogicTest.java \
-    test/com/emre/hrbuzz/TrainingTest.java \
-    test/com/emre/hrbuzz/CoachTest.java \
-    test/com/emre/hrbuzz/ImportTest.java \
-    test/com/emre/hrbuzz/MoveTest.java \
-    test/com/emre/hrbuzz/WearLogicTest.java
+    src/com/enftc/hrbuzz/HrLogic.java \
+    src/com/enftc/hrbuzz/Training.java \
+    src/com/enftc/hrbuzz/Export.java \
+    src/com/enftc/hrbuzz/Json.java \
+    src/com/enftc/hrbuzz/CoachLogic.java \
+    src/com/enftc/hrbuzz/DeepSeek.java \
+    src/com/enftc/hrbuzz/Import.java \
+    src/com/enftc/hrbuzz/Move.java \
+    wear/src/com/enftc/hrbuzz/WearLogic.java \
+    test/com/enftc/hrbuzz/HrLogicTest.java \
+    test/com/enftc/hrbuzz/TrainingTest.java \
+    test/com/enftc/hrbuzz/CoachTest.java \
+    test/com/enftc/hrbuzz/ImportTest.java \
+    test/com/enftc/hrbuzz/MoveTest.java \
+    test/com/enftc/hrbuzz/WearLogicTest.java
 
-java -cp build/test-classes com.emre.hrbuzz.HrLogicTest
-java -cp build/test-classes com.emre.hrbuzz.TrainingTest
-java -cp build/test-classes com.emre.hrbuzz.CoachTest
-java -cp build/test-classes com.emre.hrbuzz.ImportTest
-java -cp build/test-classes com.emre.hrbuzz.MoveTest
-java -cp build/test-classes com.emre.hrbuzz.WearLogicTest
+java -cp build/test-classes com.enftc.hrbuzz.HrLogicTest
+java -cp build/test-classes com.enftc.hrbuzz.TrainingTest
+java -cp build/test-classes com.enftc.hrbuzz.CoachTest
+java -cp build/test-classes com.enftc.hrbuzz.ImportTest
+java -cp build/test-classes com.enftc.hrbuzz.MoveTest
+java -cp build/test-classes com.enftc.hrbuzz.WearLogicTest
