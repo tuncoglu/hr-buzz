@@ -2,6 +2,7 @@ package com.emre.hrbuzz;
 
 import android.app.Activity;
 import android.content.Context;
+import android.graphics.Insets;
 import android.graphics.Typeface;
 import android.text.Editable;
 import android.text.TextWatcher;
@@ -9,6 +10,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.WindowInsets;
 import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -163,10 +165,22 @@ final class Ui {
         v.setVisibility(visible ? View.VISIBLE : View.GONE);
     }
 
-    /** Dark system bars to match the theme on every screen. */
+    /**
+     * Edge to edge on every screen: from Android 15 the window draws under the system bars and
+     * the bar colours are ignored, so the content is padded by the bars, the display cutout and
+     * the keyboard instead. The window background is the theme's dark colour, so the bars look
+     * the same as before. Older versions are put in the same mode so one code path is tested.
+     */
     static void darkBars(Activity a) {
-        a.getWindow().setStatusBarColor(0xFF0E0E10);
-        a.getWindow().setNavigationBarColor(0xFF0E0E10);
+        a.getWindow().setDecorFitsSystemWindows(false);
+        View content = a.findViewById(android.R.id.content);
+        content.setOnApplyWindowInsetsListener((v, insets) -> {
+            Insets bars = insets.getInsets(WindowInsets.Type.systemBars()
+                    | WindowInsets.Type.displayCutout());
+            Insets ime = insets.getInsets(WindowInsets.Type.ime());
+            v.setPadding(bars.left, bars.top, bars.right, Math.max(bars.bottom, ime.bottom));
+            return WindowInsets.CONSUMED;
+        });
     }
 
     /** The plan's steps as coloured bars sized by duration, with a caption under each. */
