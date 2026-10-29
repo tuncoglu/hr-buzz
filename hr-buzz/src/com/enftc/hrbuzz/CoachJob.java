@@ -38,6 +38,13 @@ public class CoachJob extends JobService {
                             + "of the past week.";
                 }
                 CoachLogic.Plan p = coach.todayPlan();
+                if (p == null && coach.usesDevice()) {
+                    // The model on this phone answers only while the app is on screen, so the
+                    // plan is made when the notification is opened (MainActivity plans a day
+                    // with no plan by itself).
+                    postReady(this);
+                    return;
+                }
                 if (p == null) {
                     p = coach.planNow(reason);
                 }
@@ -96,6 +103,23 @@ public class CoachJob extends JobService {
             b.addAction(new Notification.Action.Builder(null, "Start", start).build());
         }
         c.getSystemService(NotificationManager.class).notify(NOTIFICATION_ID, b.build());
+    }
+
+    /** The on-device coach cannot plan in the background: ask the person to open the app. */
+    private static void postReady(Context c) {
+        channel(c);
+        PendingIntent open = PendingIntent.getActivity(c, 10,
+                new Intent(c, MainActivity.class),
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+        c.getSystemService(NotificationManager.class).notify(NOTIFICATION_ID,
+                new Notification.Builder(c, CHANNEL_ID)
+                        .setSmallIcon(R.drawable.ic_stat_heart)
+                        .setContentTitle("Ready to plan today")
+                        .setContentText("Open HR Buzz and the coach on this phone will make it.")
+                        .setContentIntent(open)
+                        .setAutoCancel(true)
+                        .setCategory(Notification.CATEGORY_REMINDER)
+                        .build());
     }
 
     private static void postError(Context c, String error) {

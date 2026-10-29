@@ -18,6 +18,12 @@ import java.util.Map;
  */
 public final class Llm {
 
+    /**
+     * {@link ApiException#code} for a request the on-device model refused because HR Buzz was
+     * not on screen: nothing is wrong, it works when the app is open (see {@link OnDevice}).
+     */
+    public static final int NEEDS_FOREGROUND = -2;
+
     /** A failure worth showing to the person, already in plain words. */
     public static final class ApiException extends Exception {
         public final int code;

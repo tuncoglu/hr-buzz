@@ -46,6 +46,9 @@ public class CoachSetupActivity extends Activity {
     private TextView serviceText;
     /** What the key being typed looks like, before it is saved. */
     private TextView detectText;
+    /** The state of the model on this phone, and the button that switches to or from it. */
+    private TextView deviceText;
+    private TextView deviceButton;
     /** The "use the key you just copied?" offer, and the key it would use. */
     private android.widget.LinearLayout clipOffer;
     private TextView clipOfferText;
@@ -209,6 +212,10 @@ public class CoachSetupActivity extends Activity {
                 + "app. Other apps use API keys, billed by use, and Anthropic does not allow "
                 + "other apps to sign in with a Claude account.");
 
+        if (OnDevice.compiled()) {
+            deviceBlock(card);
+        }
+
         // ---- the four questions
         section(root, "1 \u00b7 What for?");
         boolean customGoal = !java.util.Arrays.asList(GOALS).contains(goal);
@@ -315,7 +322,8 @@ public class CoachSetupActivity extends Activity {
                 .show());
 
         Button save = new Button(this, null, 0, R.style.PrimaryButton);
-        save.setText(prefs.getBoolean("coachSetUp", false) && coach.hasKey() ? "Done" : "Make my plan");
+        save.setText(prefs.getBoolean("coachSetUp", false) && (coach.hasKey() || coach.usesDevice())
+                ? "Done" : "Make my plan");
         save.setAllCaps(false);
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 60));
@@ -389,7 +397,7 @@ public class CoachSetupActivity extends Activity {
                 .putString("coachWorkAround", other.isEmpty() ? around : CoachLogic.trim(other, 80))
                 .putInt("coachMorning", morning).apply();
         coach.schedule();
-        if (on && !coach.hasKey() && !newKey) {
+        if (on && !coach.hasKey() && !coach.usesDevice() && !newKey) {
             if (loud && keyOk) {
                 Toast.makeText(this, "Saved. Add an API key to switch the coach on",
                         Toast.LENGTH_LONG).show();
@@ -513,6 +521,60 @@ public class CoachSetupActivity extends Activity {
     private String serviceLine() {
         String line = coach.serviceLine();
         return line == null ? "Not set up yet" : line;
+    }
+
+    /**
+     * "No key? Use this phone": the Gemma model that AICore runs on the phone itself. Free and
+     * private, but a preview that works only while the app is open, so it says so.
+     */
+    private void deviceBlock(LinearLayout card) {
+        TextView title = Ui.text(this, "Or use this phone \u2014 no key", 15, Ui.TEXT);
+        title.setPadding(0, Ui.dp(this, 16), 0, 0);
+        card.addView(title);
+        deviceText = Ui.text(this, coach.usesDevice() ? "Using " + coach.serviceLine()
+                : "Gemma 4 runs on the phone itself", 13, Ui.TEXT2);
+        card.addView(deviceText);
+        deviceButton = Ui.chip(this, coach.usesDevice() ? "Use my API key instead"
+                : "Use the coach on this phone");
+        deviceButton.setMinHeight(Ui.dp(this, 44));
+        deviceButton.setOnClickListener(v -> toggleDevice());
+        LinearLayout.LayoutParams deviceLp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        deviceLp.topMargin = Ui.dp(this, 8);
+        card.addView(deviceButton, deviceLp);
+        hint(card, "Free, and nothing you tell the coach leaves the phone. It uses Google's "
+                + "Gemma 4 model through Android AICore, which is a developer preview: it needs a "
+                + "Pixel enrolled in the AICore developer preview. It is slower than an online "
+                + "coach (a plan takes about 30 seconds) and only works while HR Buzz is open, "
+                + "so the morning notification asks you to open the app to make your plan.");
+    }
+
+    private void toggleDevice() {
+        if (coach.usesDevice()) {
+            coach.stopUsingDevice();
+            deviceText.setText("Gemma 4 runs on the phone itself");
+            deviceButton.setText("Use the coach on this phone");
+            serviceText.setText(serviceLine());
+            if (!coach.hasKey()) {
+                deviceText.setText("Stopped. Paste an API key to keep using the coach");
+            }
+            return;
+        }
+        deviceText.setText("Checking the model on this phone\u2026");
+        coach.useDevice((ready, message) -> {
+            if (isDestroyed() || isFinishing()) {
+                return;
+            }
+            deviceText.setText(message);
+            if (ready) {
+                deviceButton.setText("Use my API key instead");
+                serviceText.setText(serviceLine());
+                if (onSwitch.isChecked() && coach.isEnabled() && !coach.isPlanning()
+                        && coach.todayPlan() == null) {
+                    coach.refreshPlan("They just set up the coach.", null);
+                }
+            }
+        });
     }
 
     private void openUrl(String url) {

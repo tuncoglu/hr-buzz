@@ -32,3 +32,6 @@ Core function: a heart-rate alarm and session recording that must keep running f
 
 ## Listing assets
 512x512 icon, 1024x500 feature graphic, 2-8 phone screenshots (the four in the repo are a start; check their size), short description (80 characters), full description (4000), contact email.
+
+## On-device coach (not in the Play build)
+The `ondevice/` variant adds a "Use the coach on this phone" option (Gemma 4 through Android AICore, developer preview). It is not part of the Play build: `build.sh` has no engine and the option is hidden. If it is ever shipped, update first: the Data safety answers (with it chosen, the coach sends nothing off the phone, so the "shared with the AI service" rows apply only to the key services), the privacy policy's coach section, and the AI-generated content answer. The model must also be generally available, since today only phones in the AICore developer preview have it.

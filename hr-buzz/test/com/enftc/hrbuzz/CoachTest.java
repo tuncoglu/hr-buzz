@@ -36,6 +36,7 @@ public final class CoachTest {
         readiness();
         redFlags();
         brief();
+        sinceLastSession();
         coachInputs();
         movement();
         testDue();
@@ -772,6 +773,73 @@ public final class CoachTest {
     }
 
     /** A run of {@code kms} km splits at {@code secs} s/km and {@code bpm}, {@code days} ago. */
+    /** The facts a small model gets wrong when it works them out from dates itself. */
+    private static void sinceLastSession() throws Exception {
+        // Wed 21 Oct 2026. Last session Thu 15 Oct (a hard run); plans for 1, 2 (rest), 3 and 4 days ago went undone.
+        List<CoachLogic.SessionInfo> ss = new ArrayList<>();
+        ss.add(run(6, 5, 400, 150));
+        CoachLogic.Extras x = new CoachLogic.Extras();
+        for (int ago = 1; ago <= 4; ago++) {
+            CoachLogic.PlanDay pd = new CoachLogic.PlanDay();
+            pd.date = CoachLogic.dateOf(NOW - ago * DAY, LONDON);
+            pd.planned = ago == 2 ? "Rest" : "Easy walk-jog, 60 min";
+            x.planDays.add(pd);
+        }
+        CoachLogic.Plan current = CoachLogic.parsePlan(Json.parseObject("{\"message\":\"m\","
+                + "\"today\":{\"title\":\"Easy\",\"sport\":\"Walking\",\"rest\":false,\"steps\":["
+                + "{\"name\":\"Walk\",\"minutes\":30,\"zoneLow\":1,\"zoneHigh\":2,\"cue\":\"c\"}]},"
+                + "\"week\":[{\"date\":\"2026-10-23\",\"title\":\"Long\",\"minutes\":90,\"zone\":2}]}"),
+                "2026-10-21");
+        Map<String, Object> raw = CoachLogic.brief(settings(), ss, new ArrayList<>(),
+                new CoachLogic.Readiness(), current, x, NOW, LONDON);
+        ok("the facts come first, straight after the date",
+                new ArrayList<>(raw.keySet()).subList(0, 2).equals(Arrays.asList("today", "situation")));
+        Map<String, Object> b = Json.parseObject(Json.write(raw));
+        List<Object> facts = Json.list(b.get("situation"));
+        eq("last session said in words", "Their last session was Thu 2026-10-15, 6 days ago.",
+                facts.get(0));
+        eq("undone planned days counted (rest excluded)",
+                "3 of the days planned since then had no session recorded.", facts.get(1));
+        eq("old hard effort named as old",
+                "Their last hard effort (a session averaging zone 4 or higher) was 6 days ago: "
+                        + "they have not trained hard since.", facts.get(2));
+        ok("a break says what to do with it", facts.get(3).toString().startsWith("Say so in the message"));
+        Map<String, Object> first = Json.obj(Json.list(b.get("recentSessions")).get(0));
+        eq("each session says how long ago", 6.0, first.get("daysAgo"));
+        Map<String, Object> firstPlanDay = Json.obj(Json.list(b.get("planHistory")).get(0));
+        eq("plan history names the weekday", "Tue", firstPlanDay.get("day"));
+        Map<String, Object> weekDay = Json.obj(Json.list(Json.obj(b.get("currentPlan"))
+                .get("week")).get(0));
+        eq("the week outline names its weekdays", "Fri", weekDay.get("day"));
+        ok("saved plans are not changed by the weekday names",
+                !Json.write(CoachLogic.planToMap(current)).contains("\"day\""));
+
+        String prompt = CoachLogic.planPrompt(raw, "test");
+        int reminder = prompt.indexOf("Before you write: Their last session was Thu");
+        ok("the plan request repeats the facts", reminder > 0);
+        ok("and does so after the data, before the answer shape",
+                reminder > prompt.indexOf("Their data as JSON:")
+                        && reminder < prompt.indexOf("Answer with JSON in this shape"));
+        ok("the prompt tells the model to trust them",
+                CoachLogic.SYSTEM.contains("\"situation\"") && CoachLogic.SYSTEM.contains("weekday"));
+
+        // yesterday: no break, so no instruction about one and no "hard effort is old" line
+        List<CoachLogic.SessionInfo> recent = new ArrayList<>();
+        recent.add(run(1, 5, 400, 150));
+        List<Object> f2 = Json.list(Json.parseObject(Json.write(CoachLogic.brief(settings(), recent,
+                new ArrayList<>(), new CoachLogic.Readiness(), null, new CoachLogic.Extras(), NOW,
+                LONDON))).get("situation"));
+        eq("yesterday is said as yesterday", "Their last session was Tue 2026-10-20, yesterday.",
+                f2.get(0));
+        eq("and nothing more to say", 1, f2.size());
+
+        Map<String, Object> none = CoachLogic.brief(settings(), new ArrayList<>(),
+                new ArrayList<>(), new CoachLogic.Readiness(), null, new CoachLogic.Extras(), NOW,
+                LONDON);
+        ok("no facts without any session", !none.containsKey("situation"));
+        ok("so no reminder line", CoachLogic.situationReminder(none).isEmpty());
+    }
+
     private static CoachLogic.SessionInfo run(int days, int kms, int secs, int bpm) {
         CoachLogic.SessionInfo r = new CoachLogic.SessionInfo();
         r.start = NOW - days * DAY;

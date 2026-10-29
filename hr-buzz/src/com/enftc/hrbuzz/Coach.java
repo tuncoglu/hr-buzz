@@ -84,10 +84,13 @@ public class Coach {
 
     // --------------------------------------------------------------- settings
 
-    /** Turned on, set up and holding a key: the coach may talk to the key's AI service. */
+    /**
+     * Turned on, set up and holding a way to think: a key (the coach may talk to the key's AI
+     * service) or the model on this phone.
+     */
     public boolean isEnabled() {
         return prefs.getBoolean("coachOn", false) && prefs.getBoolean("coachSetUp", false)
-                && hasKey();
+                && (hasKey() || usesDevice());
     }
 
     public boolean isPlanning() {
@@ -257,6 +260,59 @@ public class Coach {
         return prefs.getString("coachKey", null) != null;
     }
 
+    /**
+     * The coach thinks on this phone ({@link OnDevice}) instead of at a service. A separate
+     * switch from the key, so a saved key stays put and pasting a new one switches back.
+     */
+    public boolean usesDevice() {
+        return prefs.getBoolean("coachOnDevice", false) && OnDevice.compiled();
+    }
+
+    /** Result of {@link #useDevice}. {@code message} is a line for the person. */
+    public interface DeviceCheck {
+        /** On the main thread. */
+        void done(boolean ready, String message);
+    }
+
+    /**
+     * Switches the coach to the model on this phone when AICore has it ready (downloading it
+     * first if it can), and says what happened. Nothing changes unless it is ready.
+     */
+    public void useDevice(DeviceCheck check) {
+        worker.execute(() -> {
+            boolean ready = false;
+            String message;
+            OnDevice.Engine e = OnDevice.engine();
+            if (e == null) {
+                message = "This build of HR Buzz has no on-device coach";
+            } else {
+                try {
+                    int status = e.status();
+                    if (status == OnDevice.DOWNLOADABLE) {
+                        e.download();
+                        status = e.status();
+                    }
+                    ready = status == OnDevice.AVAILABLE;
+                    message = OnDevice.statusLine(status);
+                    if (ready) {
+                        prefs.edit().putBoolean("coachOnDevice", true).apply();
+                        message = "Using " + serviceLine();
+                    }
+                } catch (OnDevice.Failure f) {
+                    message = OnDevice.toApi(f).getMessage();
+                }
+            }
+            final boolean r = ready;
+            final String m = message;
+            main.post(() -> check.done(r, m));
+        });
+    }
+
+    /** Back to the saved key (or to no service when there is none). */
+    public void stopUsingDevice() {
+        prefs.edit().putBoolean("coachOnDevice", false).apply();
+    }
+
     /** The AI service the saved key belongs to. Keys saved before there was a choice are DeepSeek's. */
     public Provider provider() {
         return Provider.byId(prefs.getString("coachProvider", Provider.DEEPSEEK.id));
@@ -270,6 +326,9 @@ public class Coach {
 
     /** "Claude (Anthropic) · claude-sonnet-5-5", or null with no key saved. */
     public String serviceLine() {
+        if (usesDevice()) {
+            return "This phone · " + OnDevice.NAME;
+        }
         return hasKey() ? provider().label + " · " + model() : null;
     }
 
@@ -365,7 +424,7 @@ public class Coach {
             }
             List<Provider> who = Provider.identify(key);
             prefs.edit().putString("coachProvider", (who.isEmpty() ? Provider.DEEPSEEK : who.get(0)).id)
-                    .remove("coachModel").apply();
+                    .remove("coachModel").putBoolean("coachOnDevice", false).apply();
             return true;
         } catch (Exception e) {
             Log.w(TAG, "cannot store key", e);
@@ -603,7 +662,7 @@ public class Coach {
             return rest;
         }
         String key = key();
-        if (key == null) {
+        if (key == null && !usesDevice()) {
             throw new Llm.ApiException(401, "Add your API key in Coach settings");
         }
         CoachLogic.Settings s = settings();
@@ -664,7 +723,7 @@ public class Coach {
             String error = null;
             try {
                 String key = key();
-                if (key == null) {
+                if (key == null && !usesDevice()) {
                     throw new Llm.ApiException(401, "Add your API key first");
                 }
                 CoachLogic.Settings s = settings();
@@ -752,7 +811,7 @@ public class Coach {
             String error = null;
             try {
                 String key = key();
-                if (key == null) {
+                if (key == null && !usesDevice()) {
                     throw new Llm.ApiException(401, "No API key");
                 }
                 List<CoachLogic.SessionInfo> sessions = sessionsWithBreaks();
@@ -847,7 +906,8 @@ public class Coach {
     public void report(String kind, String reason, String question, String answer) {
         prefs.edit().putString("coachReports", Reports.add(prefs.getString("coachReports", ""),
                 System.currentTimeMillis(), kind, reason,
-                hasKey() ? provider().label : "", hasKey() ? model() : "", question, answer))
+                usesDevice() ? "This phone" : hasKey() ? provider().label : "",
+                usesDevice() ? OnDevice.NAME : hasKey() ? model() : "", question, answer))
                 .apply();
     }
 
@@ -889,6 +949,9 @@ public class Coach {
      * the model is picked again from its list and the request is retried once.
      */
     private Map<String, Object> call(String key, Llm.Request request) throws Llm.ApiException {
+        if (usesDevice()) {
+            return callDevice(request);
+        }
         Llm api = client(key);
         try {
             return send(api, key, request);
@@ -902,6 +965,18 @@ public class Coach {
                 throw e;
             }
             return send(again, key, request);
+        }
+    }
+
+    /** One request to the model on this phone; the log shows what it was given. */
+    private Map<String, Object> callDevice(Llm.Request request) throws Llm.ApiException {
+        prefs.edit().putString("coachLastRequest", OnDevice.describe(request)).apply();
+        long t0 = System.currentTimeMillis();
+        try {
+            return OnDevice.ask(OnDevice.engine(), request);
+        } finally {
+            Log.i(TAG, "api: on-device answer after " + (System.currentTimeMillis() - t0)
+                    + " ms");
         }
     }
 

@@ -1,0 +1,7 @@
+// The Kotlin compiler inside AGP is older than the Kotlin 2.4 the ML Kit GenAI library is
+// built with, so the newer Kotlin Gradle plugin is put on the classpath (AGP then uses it).
+buildscript {
+    repositories { google(); mavenCentral() }
+    dependencies { classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:2.4.0' }
+}
+plugins { id 'com.android.application' version '9.2.1' apply false }

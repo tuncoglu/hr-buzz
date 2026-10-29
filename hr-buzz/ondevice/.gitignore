@@ -1,0 +1,4 @@
+app/src/main/AndroidManifest.xml
+app/build/
+.gradle/
+build/
