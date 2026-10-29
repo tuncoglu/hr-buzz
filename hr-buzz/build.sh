@@ -4,7 +4,7 @@
 #                           (run ./make-upload-key.sh once to create it)
 #   DEBUG_BUILD=1 ./build.sh  debuggable build for adb run-as, signed with the local debug key;
 #                           never commit or ship that one
-#   VERSION_CODE=4 VERSION_NAME=2.2 ./build.sh   Play needs a higher code for every upload
+#   VERSION_CODE=5 VERSION_NAME=2.3 ./build.sh   Play needs a higher code for every upload
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -16,8 +16,8 @@ export PATH="$JAVA_HOME/bin:$PATH"
 
 MIN_SDK=31
 TARGET_SDK=37
-VERSION_CODE="${VERSION_CODE:-3}"
-VERSION_NAME="${VERSION_NAME:-2.1}"
+VERSION_CODE="${VERSION_CODE:-4}"
+VERSION_NAME="${VERSION_NAME:-2.2}"
 OUT="build"
 if [ -n "${DEBUG_BUILD:-}" ]; then
     APK="hr-buzz.apk"
