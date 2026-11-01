@@ -104,6 +104,10 @@
             android:exported="false" />
 
         <activity
+            android:name=".AboutNumbersActivity"
+            android:exported="false" />
+
+        <activity
             android:name=".CoachSetupActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize|stateHidden" />

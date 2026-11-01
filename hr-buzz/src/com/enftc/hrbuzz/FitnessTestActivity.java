@@ -42,6 +42,8 @@ public class FitnessTestActivity extends Activity implements HrManager.Listener 
     private TextView history;
     /** Resting HR, HRV and VO2max: the last test's, live while measuring, then this one's. */
     private Ui.Tile[] tiles;
+    /** SDNN and pNN50, the two extra HRV figures. */
+    private Ui.Tile[] hrvTiles;
     private TextView tilesNote;
     private Button startButton;
 
@@ -131,10 +133,23 @@ public class FitnessTestActivity extends Activity implements HrManager.Listener 
         root.addView(card, tlp);
         tiles = Ui.grid(this, card, new String[]{"Resting HR\nbpm", "HRV (RMSSD)\nms",
                 "VO2max\nml/kg/min"}, 3, 30);
+        hrvTiles = Ui.grid(this, card, new String[]{"SDNN\nms", "pNN50\n%"}, 2, 30);
         tilesNote = Ui.text(this, "", 13, Ui.TEXT3);
         tilesNote.setGravity(Gravity.CENTER);
         tilesNote.setPadding(0, Ui.dp(this, 6), 0, 0);
         card.addView(tilesNote);
+
+        TextView legend = Ui.text(this, "Resting HR: your average heart rate while still. "
+                + "Lower usually means fitter or more rested.\n"
+                + "RMSSD: how much the time between beats changes from one beat to the next. "
+                + "Higher usually means more recovered.\n"
+                + "SDNN: the overall spread of those times, slower swings included.\n"
+                + "pNN50: how often neighbouring beats differ by more than 50 ms.\n"
+                + "VO2max: a fitness estimate from your max and resting heart rate.",
+                13, Ui.TEXT3);
+        legend.setLineSpacing(0, 1.15f);
+        legend.setPadding(0, Ui.dp(this, 14), 0, 0);
+        card.addView(legend);
 
         result = Ui.text(this, "", 16, Ui.TEXT);
         result.setPadding(0, Ui.dp(this, 20), 0, 0);
@@ -143,6 +158,15 @@ public class FitnessTestActivity extends Activity implements HrManager.Listener 
         history = Ui.text(this, "", 14, Ui.TEXT2);
         history.setPadding(0, Ui.dp(this, 20), 0, 0);
         root.addView(history);
+
+        Button about = new Button(this, null, 0, R.style.SecondaryButton);
+        about.setText("About these numbers");
+        about.setOnClickListener(v ->
+                startActivity(new android.content.Intent(this, AboutNumbersActivity.class)));
+        LinearLayout.LayoutParams alp = new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, Ui.dp(this, 56));
+        alp.topMargin = Ui.dp(this, 20);
+        root.addView(about, alp);
 
         setContentView(scroll);
         showHistory();
@@ -153,12 +177,13 @@ public class FitnessTestActivity extends Activity implements HrManager.Listener 
     private void showLatest() {
         List<CoachLogic.Test> tests = Prefs.fitnessTests(this);
         if (tests.isEmpty()) {
-            setTiles(0, 0, 0);
-            tilesNote.setText("No test yet. All three fill in as the test runs, from 2:00 in.");
+            setTiles(0, 0, 0, 0, -1);
+            tilesNote.setText("No test yet. These fill in as the test runs, from 2:00 in.");
             return;
         }
         CoachLogic.Test last = tests.get(tests.size() - 1);
-        setTiles(last.rest, last.rmssd, Training.vo2maxEstimate(Prefs.hrMax(this), last.rest));
+        setTiles(last.rest, last.rmssd, Training.vo2maxEstimate(Prefs.hrMax(this), last.rest),
+                last.sdnn, last.pnn50);
         tilesNote.setText("Your last test, " + new SimpleDateFormat("d MMM", Locale.getDefault())
                 .format(new Date(last.t)) + ".");
     }
@@ -166,7 +191,7 @@ public class FitnessTestActivity extends Activity implements HrManager.Listener 
     /** While the test runs: the numbers so far, from the measured part only. */
     private void showLive(int elapsed) {
         if (elapsed < SETTLE_SECONDS) {
-            setTiles(0, 0, 0);
+            setTiles(0, 0, 0, 0, -1);
             int wait = SETTLE_SECONDS - elapsed;
             tilesNote.setText(String.format(Locale.ROOT,
                     "Settling: measuring starts in %d:%02d", wait / 60, wait % 60));
@@ -181,12 +206,16 @@ public class FitnessTestActivity extends Activity implements HrManager.Listener 
             rest = Math.round(sum / (float) bpms.size());
         }
         List<Integer> clean = Training.cleanRr(rrs);
-        double rmssd = clean.size() >= 30 ? Training.rmssdClean(rrs) : 0;
-        setTiles(rest, rmssd, Training.vo2maxEstimate(Prefs.hrMax(this), rest));
+        boolean enough = clean.size() >= 30;
+        setTiles(rest, enough ? Training.rmssdClean(rrs) : 0,
+                Training.vo2maxEstimate(Prefs.hrMax(this), rest),
+                enough ? Training.sdnn(rrs) : 0, enough ? Training.pnn50(rrs) : -1);
         tilesNote.setText("So far, from " + clean.size() + " clean beats. Stay still.");
     }
 
-    private void setTiles(int rest, double rmssd, double vo2) {
+    private void setTiles(int rest, double rmssd, double vo2, double sdnn, double pnn50) {
+        hrvTiles[0].set(sdnn > 0 ? String.valueOf(Math.round(sdnn)) : "--");
+        hrvTiles[1].set(pnn50 >= 0 ? String.valueOf(Math.round(pnn50)) : "--");
         tiles[0].set(rest > 0 ? String.valueOf(rest) : "--");
         tiles[1].set(rmssd > 0 ? String.valueOf(Math.round(rmssd)) : "--");
         tiles[2].set(vo2 > 0 ? String.valueOf(Math.round(vo2)) : "--");
@@ -258,11 +287,13 @@ public class FitnessTestActivity extends Activity implements HrManager.Listener 
         int rest = Math.round(sum / (float) bpms.size());
         List<Integer> clean = Training.cleanRr(rrs);
         double rmssd = Training.rmssdClean(rrs);
+        double sdnn = Training.sdnn(rrs);
+        double pnn50 = Training.pnn50(rrs);
         int hrMax = Prefs.hrMax(this);
         double vo2 = Training.vo2maxEstimate(hrMax, rest);
 
         boolean hrvOk = clean.size() >= 60;
-        setTiles(rest, hrvOk ? rmssd : 0, vo2);
+        setTiles(rest, hrvOk ? rmssd : 0, vo2, hrvOk ? sdnn : 0, hrvOk ? pnn50 : -1);
         tilesNote.setText("This test, from " + clean.size() + " clean beats.");
         StringBuilder sb = new StringBuilder();
         if (!hrvOk) {
@@ -276,9 +307,17 @@ public class FitnessTestActivity extends Activity implements HrManager.Listener 
         SharedPreferences prefs = Prefs.of(this);
         try {
             JSONArray all = new JSONArray(prefs.getString("fitnessTests", "[]"));
-            all.put(new JSONObject().put("t", System.currentTimeMillis()).put("rest", rest)
-                    .put("rmssd", clean.size() >= 60 ? Math.round(rmssd) : 0)
-                    .put("vo2", Math.round(vo2)));
+            JSONObject entry = new JSONObject().put("t", System.currentTimeMillis())
+                    .put("rest", rest)
+                    .put("rmssd", hrvOk ? Math.round(rmssd) : 0)
+                    .put("vo2", Math.round(vo2));
+            if (hrvOk) {
+                entry.put("sdnn", Math.round(sdnn));
+                if (pnn50 >= 0) {
+                    entry.put("pnn50", Math.round(pnn50));
+                }
+            }
+            all.put(entry);
             prefs.edit().putString("fitnessTests", all.toString()).apply();
         } catch (JSONException ignored) {
         }
@@ -320,6 +359,12 @@ public class FitnessTestActivity extends Activity implements HrManager.Listener 
                         .append(o.getInt("rest"));
                 if (o.optInt("rmssd") > 0) {
                     sb.append("   HRV ").append(o.getInt("rmssd"));
+                    if (o.optInt("sdnn") > 0) {
+                        sb.append("   SDNN ").append(o.getInt("sdnn"));
+                    }
+                    if (o.has("pnn50")) {
+                        sb.append("   pNN50 ").append(o.getInt("pnn50")).append('%');
+                    }
                 }
                 sb.append("   VO2max ").append(o.getInt("vo2")).append('\n');
             }

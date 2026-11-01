@@ -162,8 +162,11 @@ final class Prefs {
             JSONArray a = new JSONArray(of(c).getString("fitnessTests", "[]"));
             for (int i = 0; i < a.length(); i++) {
                 JSONObject o = a.getJSONObject(i);
-                out.add(new CoachLogic.Test(o.getLong("t"), o.getInt("rest"), o.optInt("rmssd"),
-                        o.optInt("vo2")));
+                CoachLogic.Test t = new CoachLogic.Test(o.getLong("t"), o.getInt("rest"),
+                        o.optInt("rmssd"), o.optInt("vo2"));
+                t.sdnn = o.optInt("sdnn");
+                t.pnn50 = o.has("pnn50") ? o.optInt("pnn50") : -1;
+                out.add(t);
             }
         } catch (JSONException ignored) {
         }

@@ -255,6 +255,48 @@ public final class Training {
         return n == 0 ? 0 : Math.sqrt(sum / n);
     }
 
+    /**
+     * SDNN: the sample standard deviation of the clean intervals, ms. 0 with fewer than 2. It
+     * grows with the length of the recording, so only compare it between tests of the same
+     * length (the fitness test always measures 3 minutes).
+     */
+    public static double sdnn(List<Integer> rawRrMs) {
+        List<Integer> nn = cleanRr(rawRrMs);
+        if (nn.size() < 2) {
+            return 0;
+        }
+        double mean = 0;
+        for (int rr : nn) {
+            mean += rr;
+        }
+        mean /= nn.size();
+        double sum = 0;
+        for (int rr : nn) {
+            sum += (rr - mean) * (rr - mean);
+        }
+        return Math.sqrt(sum / (nn.size() - 1));
+    }
+
+    /**
+     * pNN50: the percentage of neighbouring clean interval pairs that differ by more than
+     * 50 ms. Pairs across a dropped interval are skipped, as in {@link #rmssdClean}. -1 when
+     * there is no usable pair, so that "none" is not mistaken for a true 0 %.
+     */
+    public static double pnn50(List<Integer> rawRrMs) {
+        boolean[] ok = acceptedRr(rawRrMs);
+        int pairs = 0;
+        int over = 0;
+        for (int i = 1; i < ok.length; i++) {
+            if (ok[i] && ok[i - 1]) {
+                pairs++;
+                if (Math.abs(rawRrMs.get(i) - rawRrMs.get(i - 1)) > 50) {
+                    over++;
+                }
+            }
+        }
+        return pairs == 0 ? -1 : 100.0 * over / pairs;
+    }
+
     // ------------------------------------------------------------------ format
 
     /** 1:02:03, or 23:10 under an hour. */

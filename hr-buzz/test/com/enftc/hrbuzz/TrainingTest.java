@@ -280,6 +280,17 @@ public final class TrainingTest {
         near("rmssd skips pairs across a dropped interval", 13.229, Training.rmssdClean(gap), 0.001);
         near("rmssdClean of clean data equals rmssd", 14.142, Training.rmssdClean(rr), 0.001);
         near("rmssdClean with no pair", 0, Training.rmssdClean(Arrays.asList(1000, 2500, 1000)), 0);
+        // SDNN: mean 1000, deviations 0, 10, -10, 0 -> sqrt(200/3) = 8.165
+        near("sdnn", 8.165, Training.sdnn(rr), 0.001);
+        near("sdnn ignores a dropout", Training.sdnn(Arrays.asList(1000, 1010, 990, 1000)),
+                Training.sdnn(Arrays.asList(1000, 1010, 2500, 990, 1000)), 1e-9);
+        near("sdnn too few", 0, Training.sdnn(Arrays.asList(1000)), 0);
+        // pNN50: pairs (1000,1100) (1100,1000) (1000,1030) (1030,1020) -> 2 of 4
+        near("pnn50", 50, Training.pnn50(Arrays.asList(1000, 1100, 1000, 1030, 1020)), 1e-9);
+        near("pnn50 exactly 50 does not count", 0, Training.pnn50(Arrays.asList(1000, 1050, 1000)), 0);
+        near("pnn50 skips the pair across a dropout", 0,
+                Training.pnn50(Arrays.asList(1000, 1010, 2500, 1200, 1190)), 1e-9);
+        near("pnn50 no pair", -1, Training.pnn50(Arrays.asList(1000, 2500, 1000)), 0);
         near("vo2max uth", 15.3 * 190 / 50, Training.vo2maxEstimate(190, 50), 1e-9);
     }
 

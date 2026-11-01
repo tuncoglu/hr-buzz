@@ -203,6 +203,9 @@ public final class CoachLogic {
         public int rest;
         public int rmssd;
         public int vo2;
+        /** Shown on the phone only, never sent to the coach. 0 / -1 where not recorded. */
+        public int sdnn;
+        public int pnn50 = -1;
 
         public Test(long t, int rest, int rmssd) {
             this(t, rest, rmssd, 0);

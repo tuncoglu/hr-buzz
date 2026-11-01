@@ -21,7 +21,7 @@ What Beat 3.5.13 does, and where it is here:
 | HR and pace graphs, map | HR graph over zone bands, pace graph, route drawn to scale and coloured by zone (no map tiles: that would need the network) |
 | How do you feel + training notes | Same |
 | Latest sessions | Home screen list, newest first, a week at a time with each week's km, time and sessions; coached sessions are tagged |
-| Fitness Test (OwnIndex) | Fitness test: 5 min lying still → resting HR, HRV (RMSSD) and a VO2max estimate, with history |
+| Fitness Test (OwnIndex) | Fitness test: 5 min lying still → resting HR, HRV (RMSSD, SDNN, pNN50) and a VO2max estimate, with history. "About these numbers" on that screen says how each is worked out and that none is validated against a reference ECG |
 | HR sensor with battery | Strap name + battery %, remembered strap |
 | Sync to Polar Flow | **Not done.** I couldn't find any way for a third-party app to upload to Flow. Export TCX/GPX instead (Strava, Garmin Connect, TrainingPeaks, Runalyze…) |
 | Running Index, Training Benefit, EnergyPointer, fat-burn % | **Not copied**: they are Polar's own unpublished algorithms. Replaced by transparent equivalents: time in zones, Edwards TRIMP training load, and an effort label derived from where the time went |
