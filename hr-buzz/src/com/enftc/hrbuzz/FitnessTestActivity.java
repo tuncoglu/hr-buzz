@@ -181,7 +181,7 @@ public class FitnessTestActivity extends Activity implements HrManager.Listener 
             rest = Math.round(sum / (float) bpms.size());
         }
         List<Integer> clean = Training.cleanRr(rrs);
-        double rmssd = clean.size() >= 30 ? Training.rmssd(clean) : 0;
+        double rmssd = clean.size() >= 30 ? Training.rmssdClean(rrs) : 0;
         setTiles(rest, rmssd, Training.vo2maxEstimate(Prefs.hrMax(this), rest));
         tilesNote.setText("So far, from " + clean.size() + " clean beats. Stay still.");
     }
@@ -257,7 +257,7 @@ public class FitnessTestActivity extends Activity implements HrManager.Listener 
         }
         int rest = Math.round(sum / (float) bpms.size());
         List<Integer> clean = Training.cleanRr(rrs);
-        double rmssd = Training.rmssd(clean);
+        double rmssd = Training.rmssdClean(rrs);
         int hrMax = Prefs.hrMax(this);
         double vo2 = Training.vo2maxEstimate(hrMax, rest);
 

@@ -273,6 +273,13 @@ public final class TrainingTest {
         List<Integer> dirty = Arrays.asList(1000, 1010, 500, 1000, 2500, 990);
         eq("clean drops ectopic and out of range", Arrays.asList(1000, 1010, 990).toString(),
                 Training.cleanRr(dirty).toString());
+        // a dropped interval (here a 2500 ms strap dropout) must not make its neighbours count
+        // as successive beats: the 200 ms step across it used to dominate RMSSD
+        List<Integer> gap = Arrays.asList(1000, 1010, 990, 1000, 2500, 1200, 1190);
+        near("rmssd old way inflated by the gap", 90.1, Training.rmssd(Training.cleanRr(gap)), 0.5);
+        near("rmssd skips pairs across a dropped interval", 13.229, Training.rmssdClean(gap), 0.001);
+        near("rmssdClean of clean data equals rmssd", 14.142, Training.rmssdClean(rr), 0.001);
+        near("rmssdClean with no pair", 0, Training.rmssdClean(Arrays.asList(1000, 2500, 1000)), 0);
         near("vo2max uth", 15.3 * 190 / 50, Training.vo2maxEstimate(190, 50), 1e-9);
     }
 

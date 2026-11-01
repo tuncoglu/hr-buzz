@@ -202,13 +202,14 @@ public final class Training {
     }
 
     /**
-     * Drops RR intervals that are physiologically impossible or jump more than 25% from the
-     * previous good one (missed or extra beats), which would otherwise dominate RMSSD.
+     * Which RR intervals to keep: not physiologically impossible, and not more than 25% away
+     * from the previous one (missed or extra beats), which would otherwise dominate RMSSD.
      */
-    public static List<Integer> cleanRr(List<Integer> rrMs) {
-        List<Integer> out = new ArrayList<>();
+    private static boolean[] acceptedRr(List<Integer> rrMs) {
+        boolean[] ok = new boolean[rrMs.size()];
         int last = -1;
-        for (int rr : rrMs) {
+        for (int i = 0; i < ok.length; i++) {
+            int rr = rrMs.get(i);
             if (rr < 300 || rr > 2000) {
                 continue;
             }
@@ -216,10 +217,42 @@ public final class Training {
                 last = rr;
                 continue;
             }
-            out.add(rr);
+            ok[i] = true;
             last = rr;
         }
+        return ok;
+    }
+
+    /** The RR intervals that pass {@link #acceptedRr}, for counting clean beats. */
+    public static List<Integer> cleanRr(List<Integer> rrMs) {
+        boolean[] ok = acceptedRr(rrMs);
+        List<Integer> out = new ArrayList<>();
+        for (int i = 0; i < ok.length; i++) {
+            if (ok[i]) {
+                out.add(rrMs.get(i));
+            }
+        }
         return out;
+    }
+
+    /**
+     * RMSSD of a raw RR series after cleaning. A difference is only taken between two intervals
+     * that were neighbours in the raw series: once a bad interval is dropped, the pair either
+     * side of it is skipped, because that difference spans two beats and reads as variability
+     * that was not there. 0 when no neighbouring clean pair is left.
+     */
+    public static double rmssdClean(List<Integer> rawRrMs) {
+        boolean[] ok = acceptedRr(rawRrMs);
+        double sum = 0;
+        int n = 0;
+        for (int i = 1; i < ok.length; i++) {
+            if (ok[i] && ok[i - 1]) {
+                double d = rawRrMs.get(i) - rawRrMs.get(i - 1);
+                sum += d * d;
+                n++;
+            }
+        }
+        return n == 0 ? 0 : Math.sqrt(sum / n);
     }
 
     // ------------------------------------------------------------------ format
