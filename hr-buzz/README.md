@@ -166,7 +166,7 @@ No Gradle, no Android Studio, no AndroidX. The builds (apart from the optional `
 DEBUG_BUILD=1 ./build.sh      # -> hr-buzz.apk: debuggable (adb run-as), signed with a local debug key; for the phone on your desk
 ./build.sh                    # -> hr-buzz-release.apk and hr-buzz-release.aab: never debuggable, signed with the upload key
 DEBUG_BUILD=1 ./build-wear.sh # the watch app, same two modes (hr-buzz-wear.apk, hr-buzz-wear-release.apk/.aab)
-VERSION_CODE=5 VERSION_NAME=2.3 ./build.sh   # Play needs a higher version code for every upload
+VERSION_CODE=6 VERSION_NAME=2.4 ./build.sh   # Play needs a higher version code for every upload
 ```
 
 **On-device build.** `ondevice/build.sh` (add `install` to also run `adb install`) makes `hr-buzz-ondevice.apk`: the same `src/` and `res/` built by Gradle (AGP 9.2.1, Kotlin 2.4.0, Gradle 9) together with the ML Kit GenAI library (`com.google.mlkit:genai-prompt:1.0.0-beta5`) and `MlKitEngine.kt`. Gradle is only there because the library brings a manifest merge, Play-services and Kotlin dependencies that the shell build cannot do. It is a debug build signed with the same local debug key as `DEBUG_BUILD=1 ./build.sh`, so it installs over that one and keeps its data, and it is 13 MB against 200 KB. The release and Play builds stay on `build.sh` and have no on-device coach: before shipping it, the Data safety form, the privacy policy and the AI-generated content answer need a line saying the on-device coach sends nothing, and the model has to be generally available (today it is a developer preview).
