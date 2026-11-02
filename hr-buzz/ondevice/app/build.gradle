@@ -1,7 +1,8 @@
 // HR Buzz with the on-device coach: the same src/ and res/ as ../build.sh, plus the ML Kit
 // GenAI engine in src/main/kotlin. Debug build only, signed with the same local debug key as
-// `DEBUG_BUILD=1 ./build.sh`, so it installs over that one and keeps its data. The Play build
-// stays ../build.sh: the preview model only exists on phones in the AICore developer preview.
+// `DEBUG_BUILD=1 ../build.sh`, so it installs over that one and keeps its data. The release
+// build is the one Play gets (`../build.sh release`), signed with the upload key; the option
+// only shows on phones where AICore reports the model, and the rest never see it.
 plugins { id 'com.android.application' }
 
 android {
@@ -12,8 +13,9 @@ android {
         applicationId 'com.enftc.hrbuzz'
         minSdk 31
         targetSdk 37
-        versionCode Integer.parseInt(System.getenv('VERSION_CODE') ?: '3')
-        versionName System.getenv('VERSION_NAME') ?: '2.1'
+        // build.sh passes the numbers ../build.sh defaults to.
+        versionCode Integer.parseInt(System.getenv('VERSION_CODE') ?: '1')
+        versionName System.getenv('VERSION_NAME') ?: '0'
     }
 
     sourceSets {
@@ -35,8 +37,33 @@ android {
         }
     }
 
+    // The Play upload key, kept outside the repo (see ../../signing.sh). Only used when a
+    // release is built, so a debug build works without it.
+    def uploadDir = new File(System.getenv('HRBUZZ_SIGNING_DIR') ?:
+            (System.getProperty('user.home') + '/.config/hrbuzz-signing'))
+    def uploadProps = new File(uploadDir, 'upload.properties')
+    if (uploadProps.exists()) {
+        def props = new Properties()
+        uploadProps.withInputStream { props.load(it) }
+        signingConfigs {
+            upload {
+                storeFile new File(uploadDir, 'hrbuzz-upload.jks')
+                storePassword props.getProperty('password')
+                keyAlias props.getProperty('alias')
+                keyPassword props.getProperty('password')
+            }
+        }
+    }
+
     buildTypes {
         debug { signingConfig signingConfigs.debug }
+        release {
+            // No R8: OnDevice finds MlKitEngine by name, and the app is small anyway.
+            minifyEnabled false
+            if (uploadProps.exists()) {
+                signingConfig signingConfigs.upload
+            }
+        }
     }
 
     compileOptions {
