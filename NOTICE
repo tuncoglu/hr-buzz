@@ -1,0 +1,18 @@
+HR Buzz
+Copyright 2026 ENFTC
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+HR Buzz is an independent project. It is not made, endorsed or supported by Polar Electro Oy.
+"Polar", "Polar H10", "Polar Beat" and "Polar Flow" are trademarks of their owners and are
+named here only to say which heart-rate straps and apps the project works with or compares itself to.
+
+Third-party software:
+- The plain build (hr-buzz/build.sh) contains no third-party libraries. It uses only the Android
+  platform.
+- The Play Store build (hr-buzz/ondevice/build.sh release) additionally links Google's ML Kit
+  GenAI library (com.google.mlkit:genai-prompt) and its dependencies, which are not part of this
+  repository and are used under their own licences and Google's terms. They are downloaded by
+  Gradle at build time.
+- AI services the user can choose in the coach (OpenAI, Anthropic, Google Gemini, DeepSeek) are
+  reached over their public HTTPS APIs with the user's own key; none of their code is included.

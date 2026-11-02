@@ -214,3 +214,7 @@ Requires `ANDROID_HOME` (defaults to `/opt/android-sdk`) and a JDK (`JAVA_HOME`,
 - The route has no map underneath. Share the GPX to see it on one.
 - Calories, zones and VO2max are only as good as the profile in Settings.
 - It's a training aid, not a medical device.
+
+## License
+
+Apache License 2.0 (see `../LICENSE` and `../NOTICE`), copyright 2026 ENFTC. How the app handles your data, with a pointer to the code for each claim, is in [DATA-HANDLING.md](DATA-HANDLING.md).
