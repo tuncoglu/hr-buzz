@@ -1,10 +1,7 @@
 package com.enftc.hrbuzz;
 
 import android.app.Activity;
-import android.content.SharedPreferences;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.view.Gravity;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -30,11 +27,11 @@ import java.util.Locale;
  */
 public class FitnessTestActivity extends Activity implements HrManager.Listener {
 
-    private static final int TEST_SECONDS = 300;
-    private static final int SETTLE_SECONDS = 120;
+    private static final int TEST_SECONDS = FitnessTestSession.TEST_SECONDS;
+    private static final int SETTLE_SECONDS = FitnessTestSession.SETTLE_SECONDS;
 
     private HrManager hr;
-    private final Handler main = new Handler(Looper.getMainLooper());
+    private FitnessTestSession session;
 
     private TextView clock;
     private TextView live;
@@ -47,40 +44,12 @@ public class FitnessTestActivity extends Activity implements HrManager.Listener 
     private TextView tilesNote;
     private Button startButton;
 
-    private boolean running;
-    private long startedAt;
-    private final List<Integer> bpms = new ArrayList<>();
-    private final List<Integer> rrs = new ArrayList<>();
-
-    private final Runnable tick = new Runnable() {
-        @Override
-        public void run() {
-            if (!running) {
-                return;
-            }
-            int elapsed = (int) ((System.currentTimeMillis() - startedAt) / 1000);
-            if (elapsed >= TEST_SECONDS) {
-                complete();
-                return;
-            }
-            int bpm = hr.getBpm();
-            if (elapsed >= SETTLE_SECONDS && bpm > 0) {
-                bpms.add(bpm);
-            }
-            int left = TEST_SECONDS - elapsed;
-            clock.setText(String.format(Locale.ROOT, "%d:%02d", left / 60, left % 60));
-            live.setText((bpm > 0 ? bpm + " bpm" : "No heart rate") + "  \u00b7  "
-                    + (elapsed < SETTLE_SECONDS ? "settling" : "measuring"));
-            showLive(elapsed);
-            main.postDelayed(this, 1000);
-        }
-    };
-
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         Ui.darkBars(this);
         hr = HrManager.get(this);
+        session = FitnessTestSession.get(this);
 
         ScrollView scroll = new ScrollView(this);
         LinearLayout root = new LinearLayout(this);
@@ -115,8 +84,9 @@ public class FitnessTestActivity extends Activity implements HrManager.Listener 
         blp.topMargin = Ui.dp(this, 20);
         root.addView(startButton, blp);
         startButton.setOnClickListener(v -> {
-            if (running) {
-                cancel();
+            if (session.isRunning()) {
+                session.cancel();
+                live.setText("Cancelled");
             } else {
                 begin();
             }
@@ -170,7 +140,39 @@ public class FitnessTestActivity extends Activity implements HrManager.Listener 
 
         setContentView(scroll);
         showHistory();
+        render();
+    }
+
+    /** Draws the session as it is now: the countdown, the live numbers or the last result. */
+    private void render() {
+        boolean running = session.isRunning();
+        if (running) {
+            int elapsed = Math.min(session.elapsedSeconds(), TEST_SECONDS);
+            int left = TEST_SECONDS - elapsed;
+            int bpm = hr.getBpm();
+            clock.setText(String.format(Locale.ROOT, "%d:%02d", left / 60, left % 60));
+            live.setText((bpm > 0 ? bpm + " bpm" : "No heart rate") + "  \u00b7  "
+                    + (elapsed < SETTLE_SECONDS ? "settling" : "measuring"));
+            showLive(elapsed);
+            startButton.setText("Cancel");
+            getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+            return;
+        }
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        boolean finished = session.isFinished();
+        startButton.setText(finished ? "Start again" : "Start test");
+        clock.setText(finished ? "0:00" : "5:00");
+        result.setText(session.resultText());
         showLatest();
+        if (finished && !session.resultNote().isEmpty()) {
+            tilesNote.setText(session.resultNote());
+        }
+        showHistory();
+        if (finished) {
+            live.setText("");
+        } else if (!live.getText().toString().equals("Cancelled")) {
+            live.setText(hr.isConnected() ? hr.getBpm() + " bpm" : hr.getState());
+        }
     }
 
     /** Before a test: the last result, or what the test will give. */
@@ -197,6 +199,7 @@ public class FitnessTestActivity extends Activity implements HrManager.Listener 
                     "Settling: measuring starts in %d:%02d", wait / 60, wait % 60));
             return;
         }
+        List<Integer> bpms = session.bpms();
         int rest = 0;
         if (bpms.size() >= 10) {
             long sum = 0;
@@ -205,6 +208,7 @@ public class FitnessTestActivity extends Activity implements HrManager.Listener 
             }
             rest = Math.round(sum / (float) bpms.size());
         }
+        List<Integer> rrs = session.rrs();
         List<Integer> clean = Training.cleanRr(rrs);
         boolean enough = clean.size() >= 30;
         setTiles(rest, enough ? Training.rmssdClean(rrs) : 0,
@@ -225,123 +229,23 @@ public class FitnessTestActivity extends Activity implements HrManager.Listener 
     protected void onStart() {
         super.onStart();
         hr.addListener(this);
-        if (!running) {
-            live.setText(hr.isConnected() ? hr.getBpm() + " bpm" : hr.getState());
-        }
+        session.setUi(this::render);
+        render();
     }
 
     @Override
     protected void onStop() {
         super.onStop();
         hr.removeListener(this);
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        running = false;
-        main.removeCallbacks(tick);
+        session.setUi(null);
     }
 
     private void begin() {
-        if (!hr.isConnected()) {
+        if (!session.begin()) {
             live.setText("Connect the strap first (Connect on the home screen)");
             return;
         }
-        running = true;
-        startedAt = System.currentTimeMillis();
-        bpms.clear();
-        rrs.clear();
-        result.setText("");
-        startButton.setText("Cancel");
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        main.post(tick);
-    }
-
-    private void cancel() {
-        running = false;
-        main.removeCallbacks(tick);
-        startButton.setText("Start test");
-        clock.setText("5:00");
-        live.setText("Cancelled");
-        showLatest();
-        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-    }
-
-    private void complete() {
-        running = false;
-        startButton.setText("Start again");
-        clock.setText("0:00");
-        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        hr.testAlarm();
-
-        if (bpms.size() < 60) {
-            result.setText("Not enough heart rate data \u2014 check the strap and try again.");
-            showLatest();
-            return;
-        }
-        long sum = 0;
-        for (int b : bpms) {
-            sum += b;
-        }
-        int rest = Math.round(sum / (float) bpms.size());
-        List<Integer> clean = Training.cleanRr(rrs);
-        double rmssd = Training.rmssdClean(rrs);
-        double sdnn = Training.sdnn(rrs);
-        double pnn50 = Training.pnn50(rrs);
-        int hrMax = Prefs.hrMax(this);
-        double vo2 = Training.vo2maxEstimate(hrMax, rest);
-
-        boolean hrvOk = clean.size() >= 60;
-        setTiles(rest, hrvOk ? rmssd : 0, vo2, hrvOk ? sdnn : 0, hrvOk ? pnn50 : -1);
-        tilesNote.setText("This test, from " + clean.size() + " clean beats.");
-        StringBuilder sb = new StringBuilder();
-        if (!hrvOk) {
-            sb.append("No HRV this time: the strap sent too few clean beat-to-beat intervals "
-                    + "(").append(clean.size()).append(" of 60 needed). Wet the electrodes "
-                    + "and stay still.\n\n");
-        }
-        sb.append("VO2max here is 15.3 \u00d7 HRmax (").append(hrMax).append(") \u00f7 "
-                + "resting HR, so it is only as good as your max heart rate.");
-
-        SharedPreferences prefs = Prefs.of(this);
-        try {
-            JSONArray all = new JSONArray(prefs.getString("fitnessTests", "[]"));
-            JSONObject entry = new JSONObject().put("t", System.currentTimeMillis())
-                    .put("rest", rest)
-                    .put("rmssd", hrvOk ? Math.round(rmssd) : 0)
-                    .put("vo2", Math.round(vo2));
-            if (hrvOk) {
-                entry.put("sdnn", Math.round(sdnn));
-                if (pnn50 >= 0) {
-                    entry.put("pnn50", Math.round(pnn50));
-                }
-            }
-            all.put(entry);
-            prefs.edit().putString("fitnessTests", all.toString()).apply();
-        } catch (JSONException ignored) {
-        }
-        if (Prefs.restHrAuto(this)) {
-            sb.append("\n\nYour profile's resting heart rate is now ")
-                    .append(Prefs.restHrFromTests(this))
-                    .append(" (the middle of your last three tests).");
-        } else {
-            sb.append("\n\nYour profile keeps the resting heart rate you entered; switch it to "
-                    + "\"From fitness tests\" in Settings to follow these results.");
-        }
-        Coach coach = Coach.get(this);
-        if (coach.isEnabled()) {
-            CoachLogic.Plan before = coach.todayPlan();
-            int adjusted = before == null ? 0 : before.adjusted.size();
-            coach.applyReadiness();
-            CoachLogic.Plan after = coach.todayPlan();
-            if (after != null && after.adjusted.size() > adjusted) {
-                sb.append("\n\nToday's plan is now easier: ")
-                        .append(after.adjusted.get(after.adjusted.size() - 1)).append('.');
-            }
-        }
-        result.setText(sb.toString());
-        showHistory();
+        render();
     }
 
     private void showHistory() {
@@ -382,22 +286,12 @@ public class FitnessTestActivity extends Activity implements HrManager.Listener 
 
     @Override
     public void onBpm(int bpm, boolean above) {
-        if (!running) {
+        if (!session.isRunning()) {
             runOnUiThread(() -> live.setText(bpm + " bpm"));
         }
     }
 
     @Override
     public void onConnected(boolean connected) {
-    }
-
-    @Override
-    public void onSample(HrLogic.Measurement m) {
-        if (!running || System.currentTimeMillis() - startedAt < SETTLE_SECONDS * 1000L) {
-            return;
-        }
-        for (int rr : m.rrMs) {
-            rrs.add(rr);
-        }
     }
 }
