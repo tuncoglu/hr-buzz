@@ -1,0 +1,26 @@
+HR Buzz is a small, private training app for Bluetooth heart-rate straps (Polar H10, H9, Verity Sense, Garmin, Wahoo and others). It beeps and buzzes when your heart rate goes over or under a limit you set, and it records your sessions with GPS, heart-rate zones, calories and voice guidance. No account, no ads, no analytics.
+
+HEART-RATE ALARM
+• Alert above a limit, and optionally below one. A calm mode gives a short silent buzz first and only beeps if you stay over; an immediate mode beeps straight away.
+• Lost-signal alarm if the strap stops sending, so a dropped strap never goes unnoticed.
+• Works with or without a session running, with the screen off and the phone in your pocket.
+
+TRACKING
+• Running, walking, cycling, hiking (GPS), plus gym and other (no GPS).
+• Live heart rate in zone colours, duration, distance, pace, calories and average heart rate.
+• Voice guidance every kilometre or every 1, 5 or 10 minutes, or buzz-only cues that never interrupt your music or audiobook.
+• Summary with heart-rate and pace graphs, kilometre splits and a route drawn to scale. Export to TCX or GPX for Strava, Garmin Connect and others.
+• A resting fitness test: resting heart rate, HRV and a VO2max estimate, with history.
+• Sessions are recorded to disk every second and recovered if Android stops the app.
+
+OPTIONAL AI COACH (off until you turn it on)
+Bring your own key from OpenAI, Anthropic (Claude), Google (Gemini) or DeepSeek, or, on a Pixel that has Google's Gemma 4 model (Android AICore developer preview), run it on the phone with no key. The coach plans your week, runs guided workouts with step-by-step alerts, and writes a short debrief after each session. When it is on, session totals and your profile (age, sex, weight, max heart rate) are sent to the service you chose, under that service's own terms; on the phone, they stay on the phone. GPS and second-by-second heart rate are never sent. You can see the exact last message sent, report any answer, and delete everything the coach remembers. Messages that mention chest pain, fainting or similar symptoms are never sent: the app tells you to stop and see a doctor.
+
+HEALTH CONNECT (optional, read-only)
+Reads steps and exercise for "Move minutes". Sleep, distance, resting heart rate and HRV are a separate opt-in used to judge recovery. HR Buzz never writes to Health Connect.
+
+PRIVACY
+Everything stays on your phone unless you turn the coach on. The on-device coach sends nothing off the phone. Delete it by uninstalling. Privacy policy: https://hrbuzz.sourdoughcalculator.uk/privacy/
+
+NOT MEDICAL ADVICE
+HR Buzz and its coach are training aids, not medical devices. Heart-rate zones, alerts and plans are estimates and are not a diagnosis or a substitute for a doctor. If you have a heart condition or take medication that affects your heart rate, use the limits your doctor gave you. Stop and seek medical help for chest pain, fainting, dizziness or an irregular heartbeat.

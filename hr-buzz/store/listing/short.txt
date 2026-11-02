@@ -1,0 +1,1 @@
+Heart-rate alarm and run tracker for Polar and other Bluetooth chest straps.
