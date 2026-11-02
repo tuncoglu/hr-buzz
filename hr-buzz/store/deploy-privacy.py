@@ -7,7 +7,9 @@ api-keys.md (how to get a key, and what it costs) at .../keys/.
                                 "hr-buzz", attach the domain and its DNS record
 
 A separate Pages project, so the sourdough site (deployed from its own repo) is never touched.
-The Cloudflare token is read from ~/.cf-token inside this script and never printed.
+The Cloudflare token is read from ~/.cf-token inside this script and never printed. The account and
+zone ids are not in the repository: put {"account_id": "...", "zone_id": "..."} in
+~/.config/hrbuzz-deploy/cloudflare.json (mode 600), or set CF_ACCOUNT_ID and CF_ZONE_ID.
 Standard library only; markdown is the one extra module (already installed).
 """
 import base64
@@ -23,8 +25,6 @@ import markdown
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SITE = os.path.join(HERE, "site")
-ACCOUNT = "f217e2d9285193b32d473c8ddb5bc5df"
-ZONE = "82a93156383edc5b256b5b3b81216d7b"
 PROJECT = "hr-buzz"
 HOST = "hrbuzz.sourdoughcalculator.uk"
 API = "https://api.cloudflare.com/client/v4"
@@ -90,6 +90,22 @@ def render():
     print("rendered", ", ".join(sorted(files)), "into", SITE)
 
 
+def cloudflare_id(env, key):
+    """An account or zone id, from the environment or ~/.config/hrbuzz-deploy/cloudflare.json."""
+    value = os.environ.get(env)
+    if not value:
+        path = os.path.expanduser("~/.config/hrbuzz-deploy/cloudflare.json")
+        try:
+            with open(path) as f:
+                value = json.load(f).get(key)
+        except (OSError, ValueError):
+            value = None
+    if not value:
+        sys.exit("no Cloudflare %s: set %s or put it in ~/.config/hrbuzz-deploy/cloudflare.json"
+                 % (key, env))
+    return value
+
+
 def token():
     with open(os.path.expanduser("~/.cf-token")) as f:
         return "".join(f.read().split())
@@ -119,7 +135,7 @@ def asset_hash(b64, ext):
 
 def deploy():
     render()
-    acct = "%s/accounts/%s" % (API, ACCOUNT)
+    acct = "%s/accounts/%s" % (API, cloudflare_id("CF_ACCOUNT_ID", "account_id"))
     existing = {p["name"]: p for p in call("GET", acct + "/pages/projects")}
     if PROJECT not in existing:
         print("creating Pages project", PROJECT)
@@ -160,9 +176,10 @@ def deploy():
     if HOST not in domains:
         call("POST", "%s/pages/projects/%s/domains" % (acct, PROJECT), {"name": HOST})
         print("attached", HOST)
-    records = call("GET", "%s/zones/%s/dns_records?name=%s" % (API, ZONE, HOST))
+    zone = cloudflare_id("CF_ZONE_ID", "zone_id")
+    records = call("GET", "%s/zones/%s/dns_records?name=%s" % (API, zone, HOST))
     if not records:
-        call("POST", "%s/zones/%s/dns_records" % (API, ZONE),
+        call("POST", "%s/zones/%s/dns_records" % (API, zone),
              {"type": "CNAME", "name": "hrbuzz", "content": pages_host, "proxied": True})
         print("added DNS CNAME", HOST, "->", pages_host)
     print("done: https://%s/privacy" % HOST)
