@@ -2,7 +2,7 @@
 # HR Buzz with the on-device coach (Gemma 4 through AICore). This is the build Play gets.
 #   ./build.sh release         ../hr-buzz-ondevice-release.aab (+ .apk): never debuggable, signed
 #                              with the upload key (run ../make-upload-key.sh once). Version
-#                              numbers are ../build.sh's, or VERSION_CODE=6 VERSION_NAME=2.4
+#                              numbers are ../build.sh's, or VERSION_CODE=7 VERSION_NAME=2.5
 #   ./build.sh                 ../hr-buzz-ondevice.apk: debug, signed with the local debug key so
 #                              it installs over `DEBUG_BUILD=1 ../build.sh` and keeps its data
 #   ./build.sh install         ...and install it with adb
