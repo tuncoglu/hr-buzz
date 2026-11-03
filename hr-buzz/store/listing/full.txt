@@ -1,4 +1,4 @@
-HR Buzz is a small, private training app for Bluetooth heart-rate straps (Polar H10, H9, Verity Sense, Garmin, Wahoo and others). It beeps and buzzes when your heart rate goes over or under a limit you set, and it records your sessions with GPS, heart-rate zones, calories and voice guidance. No account, no ads, no analytics.
+HR Buzz is a small, private training app for Bluetooth heart-rate straps (Polar H10, H9, Verity Sense, Garmin, Wahoo and others) and for watches that broadcast heart rate. It beeps and buzzes when your heart rate goes over or under a limit you set, and it records your sessions with GPS, heart-rate zones, calories and voice guidance. No account, no ads, no analytics.
 
 HEART-RATE ALARM
 • Alert above a limit, and optionally below one. A calm mode gives a short silent buzz first and only beeps if you stay over; an immediate mode beeps straight away.

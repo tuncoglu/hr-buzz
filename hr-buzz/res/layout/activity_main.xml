@@ -110,7 +110,7 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="6dp"
-                android:text="No skin contact — wet the electrodes and tighten the strap"
+                android:text="No skin contact — wet the electrodes and tighten the strap, or snug the watch on your wrist"
                 android:textColor="@color/danger"
                 android:textSize="14sp"
                 android:visibility="gone" />

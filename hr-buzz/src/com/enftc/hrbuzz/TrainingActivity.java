@@ -335,7 +335,7 @@ public class TrainingActivity extends Activity implements Recorder.Listener, HrM
         StringBuilder top = new StringBuilder(recorder.gpsStatus());
         int battery = hr.getBattery();
         if (battery >= 0 && battery <= 20) {
-            top.append(top.length() > 0 ? "  " : "").append("Strap ").append(battery).append('%');
+            top.append(top.length() > 0 ? "  " : "").append("Sensor ").append(battery).append('%');
         }
         gpsView.setText(top);
 
@@ -351,7 +351,7 @@ public class TrainingActivity extends Activity implements Recorder.Listener, HrM
                     : Training.ZONE_NAMES[0]) + " \u00b7 "
                     + Training.percentOfMax(bpm, s.hrMax) + "%");
         } else {
-            zoneView.setText(hr.isConnected() ? "Waiting for heart rate" : "Strap not connected");
+            zoneView.setText(hr.isConnected() ? "Waiting for heart rate" : "Sensor not connected");
         }
         strip.set(bpm, s.hrMax);
         // The range the running step asks for, outlined on the strip.
@@ -374,7 +374,7 @@ public class TrainingActivity extends Activity implements Recorder.Listener, HrM
         } else if (!hr.isConnected()) {
             statusView.setText(hr.getState());
         } else if (!hr.hasContact()) {
-            statusView.setText("No skin contact \u2014 check the strap");
+            statusView.setText("No skin contact \u2014 check the sensor");
         } else if (recorder.getPlan() != null) {
             statusView.setText("Coached: " + recorder.getPlan().title);
         } else {

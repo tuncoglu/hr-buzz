@@ -155,6 +155,8 @@ On first launch it asks for **Nearby devices** (Bluetooth) and **Notifications**
 
 The first time, open **Settings** and enter age, sex, weight and (ideally) your real max HR.
 
+**Watches instead of a strap.** Any watch that broadcasts heart rate over Bluetooth should work, because HR Buzz reads the standard heart-rate service. On a Garmin: Settings → Sensors & Accessories → Wrist Heart Rate → Broadcast Heart Rate, then open HR Buzz. Expect a few seconds of lag compared with a chest strap (wrist sensors are slower to follow intervals), no skin-contact or battery readings on some models, and no beat-to-beat intervals, so the fitness test gives resting heart rate and VO2max but no HRV. Many watches let only one app hold the link, so close Garmin Connect (or whatever else is using it) first. Not yet tested on a real Garmin watch.
+
 You can still run Polar Beat or Strava alongside it: an H10 with "2 Bluetooth connections" enabled serves both.
 
 ## Build

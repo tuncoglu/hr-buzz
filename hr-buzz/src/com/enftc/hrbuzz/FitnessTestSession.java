@@ -151,7 +151,7 @@ final class FitnessTestSession implements HrManager.Listener {
         hr.testAlarm();
 
         if (bpms.size() < 60) {
-            resultText = "Not enough heart rate data — check the strap and try again.";
+            resultText = "Not enough heart rate data — check the sensor and try again.";
             resultNote = "";
             redraw();
             return;
@@ -171,8 +171,13 @@ final class FitnessTestSession implements HrManager.Listener {
         boolean hrvOk = clean.size() >= 60;
         resultNote = "This test, from " + clean.size() + " clean beats.";
         StringBuilder sb = new StringBuilder();
-        if (!hrvOk) {
-            sb.append("No HRV this time: the strap sent too few clean beat-to-beat intervals "
+        if (!hrvOk && rrs.isEmpty()) {
+            // Many watches and some armbands send the heart rate but no beat-to-beat intervals.
+            sb.append("No HRV: this sensor sends no beat-to-beat intervals. Chest straps do; "
+                    + "most watches do not. Resting heart rate and VO2max below are still "
+                    + "worked out.\n\n");
+        } else if (!hrvOk) {
+            sb.append("No HRV this time: the sensor sent too few clean beat-to-beat intervals "
                     + "(").append(clean.size()).append(" of 60 needed). Wet the electrodes "
                     + "and stay still.\n\n");
         }

@@ -183,7 +183,7 @@ public class HrManager {
             }
             long now = System.currentTimeMillis();
             if (HrLogic.isStale(lastSampleAt, now, STALE_MS)) {
-                dropLink("No heart rate data \u2014 check the strap");
+                dropLink("No heart rate data \u2014 check the sensor");
                 return;
             }
             main.postDelayed(this, WATCHDOG_MS);
@@ -541,7 +541,7 @@ public class HrManager {
             return;
         }
         stopScan();
-        String target = getDeviceName() != null ? getDeviceName() : "a heart rate strap";
+        String target = getDeviceName() != null ? getDeviceName() : "a heart rate sensor";
         announce(linkLost ? "Signal lost \u2014 searching\u2026"
                 : "Searching for " + target + "\u2026");
 
@@ -1006,9 +1006,9 @@ public class HrManager {
     private String safeName(BluetoothDevice device) {
         try {
             String name = device.getName();
-            return name == null ? "heart rate strap" : name;
+            return name == null ? "heart rate sensor" : name;
         } catch (SecurityException e) {
-            return "heart rate strap";
+            return "heart rate sensor";
         }
     }
 }

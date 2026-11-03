@@ -252,13 +252,13 @@ public class SettingsActivity extends Activity {
         test.setOnClickListener(v -> hr.testAlarm());
 
         // ---- strap
-        section(root, "Heart rate strap");
+        section(root, "Heart rate sensor");
         LinearLayout strap = card(root);
         strapText = Ui.text(this, "", 15, Ui.TEXT);
         strap.addView(strapText);
-        hint(strap, "HR Buzz remembers the first strap it connects to and ignores others, "
+        hint(strap, "HR Buzz remembers the first sensor it connects to and ignores others, "
                 + "so it never picks up somebody else's at the gym or a race.");
-        Button forget = button(strap, "Forget this strap");
+        Button forget = button(strap, "Forget this sensor");
         forget.setOnClickListener(v -> {
             hr.forgetDevice();
             refreshStrap();
@@ -445,7 +445,7 @@ public class SettingsActivity extends Activity {
     private void refreshStrap() {
         String name = hr.getDeviceName();
         strapText.setText(name != null ? "Remembered: " + name
-                : "None remembered yet \u2014 the next strap found will be used");
+                : "None remembered yet \u2014 the next sensor found will be used");
     }
 
     private String version() {

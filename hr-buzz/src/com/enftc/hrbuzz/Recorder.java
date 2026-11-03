@@ -814,7 +814,7 @@ public class Recorder implements HrManager.Listener {
         } else if (event == HrLogic.Alarm.UNDER) {
             say("Heart rate " + bpm + ". Too low, pick it up.");
         } else if (event == HrLogic.Alarm.LOST) {
-            say("Heart rate signal lost. Check the strap.");
+            say("Heart rate signal lost. Check the sensor.");
         }
     }
 

@@ -59,7 +59,7 @@ public class FitnessTestActivity extends Activity implements HrManager.Listener 
         scroll.addView(root);
 
         root.addView(Ui.bold(Ui.text(this, "Fitness test", 26, Ui.TEXT)));
-        TextView how = Ui.text(this, "Wear the strap, lie down somewhere quiet and relax. "
+        TextView how = Ui.text(this, "Wear the sensor, lie down somewhere quiet and relax. "
                 + "Stay still and breathe normally for 5 minutes; the phone beeps when it is "
                 + "done.\n\nBest done in the morning, rested, before coffee \u2014 and in the "
                 + "same conditions each time if you want to compare results.", 15, Ui.TEXT2);
@@ -242,7 +242,7 @@ public class FitnessTestActivity extends Activity implements HrManager.Listener 
 
     private void begin() {
         if (!session.begin()) {
-            live.setText("Connect the strap first (Connect on the home screen)");
+            live.setText("Connect the sensor first (Connect on the home screen)");
             return;
         }
         render();
