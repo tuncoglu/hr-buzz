@@ -1,5 +1,7 @@
-# Google Play releases for com.enftc.hrbuzz (the phone app in hr-buzz/), started by hand
-# (Actions → Play release → Run workflow). The Wear OS bundle is not released from here.
+# Google Play releases for com.enftc.hrbuzz, started by hand (Actions → Play release → Run workflow).
+# The `app` input picks the phone app (hr-buzz/build.sh, ondevice/build.sh) or the Wear OS watch app
+# (hr-buzz/build-wear.sh): same package, two bundles, the watch one goes to the Wear OS form-factor
+# tracks (wear:internal, wear:production).
 #
 # Two jobs, so build code never runs next to the release credentials:
 #   build  runs hr-buzz/test.sh and hr-buzz/ondevice/build.sh release: the build Play gets since 2.4
@@ -16,8 +18,9 @@
 #   upload-internal     build, then upload to the internal testing track
 #   promote-production  point production at an already-uploaded versionCode (no build)
 #
-# Version: the VERSION_CODE / VERSION_NAME defaults in hr-buzz/build.sh; bump them for every upload
-# (Play rejects a reused versionCode).
+# Version: the VERSION_CODE / VERSION_NAME defaults in hr-buzz/build.sh (phone) or hr-buzz/build-wear.sh
+# (watch); bump them for every upload (Play rejects a reused versionCode, and codes are unique across
+# both bundles, so watch codes start at 101 and the phone's stay below that).
 #
 # Setup: Google side = pool `github`, provider `hrbuzz-production` (accepts only this repository's id,
 # environment `production`, ref main, workflow_dispatch and this workflow file), service account
@@ -35,6 +38,11 @@ on:
         type: choice
         options: [status, build-check, upload-internal, promote-production]
         default: status
+      app:
+        description: "Which bundle: the phone app or the Wear OS watch app (watch uses the wear:* tracks)"
+        type: choice
+        options: [phone, watch]
+        default: phone
       internal_status:
         description: "upload-internal: release status on the internal track"
         type: choice
@@ -114,7 +122,8 @@ jobs:
             -alias upload -keyalg RSA -keysize 2048 -validity 1 -dname 'CN=HR Buzz Upload, OU=CI throwaway' -noprompt
           printf 'alias=upload\npassword=%s\n' "$pw" > "$d/upload.properties"
 
-      - name: Build the release bundle
+      - name: Build the release bundle (phone)
+        if: inputs.app == 'phone'
         env:
           HRBUZZ_SIGNING_DIR: ${{ runner.temp }}/throwaway
         run: |
@@ -122,13 +131,31 @@ jobs:
           ondevice/build.sh release
           [ -s hr-buzz-ondevice-release.aab ] || { echo "no bundle was built"; exit 1; }
 
+      # build-wear.sh needs no Gradle, only the SDK, the JDK and bundletool (pinned, checksum-checked).
+      - name: Build the release bundle (watch)
+        if: inputs.app == 'watch'
+        env:
+          HRBUZZ_SIGNING_DIR: ${{ runner.temp }}/throwaway
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/.cache/polar-hr-toolchain"
+          jar="$HOME/.cache/polar-hr-toolchain/bundletool.jar"
+          curl -fsSL -o "$jar" https://github.com/google/bundletool/releases/download/1.18.3/bundletool-all-1.18.3.jar
+          echo "a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29  $jar" | sha256sum -c -
+          ./build-wear.sh
+          [ -s hr-buzz-wear-release.aab ] || { echo "no bundle was built"; exit 1; }
+
       - name: Version and checksum
         id: meta
+        env:
+          APP: ${{ inputs.app }}
         run: |
-          cp hr-buzz-ondevice-release.aab "$RUNNER_TEMP/app-release.aab"
+          if [ "$APP" = watch ]; then src=build-wear.sh; aab=hr-buzz-wear-release.aab
+          else src=build.sh; aab=hr-buzz-ondevice-release.aab; fi
+          cp "$aab" "$RUNNER_TEMP/app-release.aab"
           {
-            echo "version_code=$(sed -n 's/^VERSION_CODE="\${VERSION_CODE:-\([0-9]*\)}"$/\1/p' build.sh)"
-            echo "version_name=$(sed -n 's/^VERSION_NAME="\${VERSION_NAME:-\([^}]*\)}"$/\1/p' build.sh)"
+            echo "version_code=$(sed -n 's/^VERSION_CODE="\${VERSION_CODE:-\([0-9]*\)}"$/\1/p' "$src")"
+            echo "version_name=$(sed -n 's/^VERSION_NAME="\${VERSION_NAME:-\([^}]*\)}"$/\1/p' "$src")"
             echo "sha256=$(sha256sum "$RUNNER_TEMP/app-release.aab" | cut -d' ' -f1)"
           } >> "$GITHUB_OUTPUT"
           cat "$GITHUB_OUTPUT"
@@ -205,6 +232,7 @@ jobs:
         env:
           PLAY_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
           ACTION: ${{ inputs.action }}
+          APP: ${{ inputs.app }}
           INTERNAL_STATUS: ${{ inputs.internal_status }}
           BUILD_CODE: ${{ needs.build.outputs.version_code }}
           BUILD_NAME: ${{ needs.build.outputs.version_name }}
@@ -213,15 +241,20 @@ jobs:
           RELEASE_NOTES: ${{ inputs.release_notes }}
         run: |
           set -euo pipefail
+          case "$APP" in
+            phone) internal=internal;    production=production ;;
+            watch) internal=wear:internal; production=wear:production ;;
+            *) echo "unknown app $APP"; exit 1 ;;
+          esac
           case "$ACTION" in
             status)
               bash ./play-status.sh "$PACKAGE" ;;
             upload-internal)
-              bash ./play-upload.sh "$PACKAGE" "$RUNNER_TEMP/aab/app-release.aab" internal \
+              bash ./play-upload.sh "$PACKAGE" "$RUNNER_TEMP/aab/app-release.aab" "$internal" \
                 "$INTERNAL_STATUS" "$BUILD_CODE ($BUILD_NAME)" ;;
             promote-production)
               [[ "$VERSION_CODE" =~ ^[0-9]+$ ]] || { echo "version_code must be a number"; exit 1; }
               [[ "$VERSION_NAME" =~ ^[0-9A-Za-z.+-]+$ ]] || { echo "version_name looks wrong"; exit 1; }
-              bash ./play-production.sh "$PACKAGE" "$VERSION_CODE" "$VERSION_NAME" "$RELEASE_NOTES" ;;
+              bash ./play-production.sh "$PACKAGE" "$VERSION_CODE" "$VERSION_NAME" "$RELEASE_NOTES" "$production" ;;
             *) echo "unknown action $ACTION"; exit 1 ;;
           esac

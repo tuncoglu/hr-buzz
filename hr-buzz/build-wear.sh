@@ -4,7 +4,7 @@
 #                                (./make-upload-key.sh); also makes hr-buzz-wear-release.aab
 #   DEBUG_BUILD=1 ./build-wear.sh  debuggable build for adb run-as, signed with the local debug
 #                                key (what is installed on the test watch); never commit or ship it
-#   VERSION_CODE=2 VERSION_NAME=1.1 ./build-wear.sh
+#   VERSION_CODE=102 VERSION_NAME=1.1 ./build-wear.sh   (watch codes start at 101: Play wants codes unique across the phone and watch bundles)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -16,7 +16,7 @@ export PATH="$JAVA_HOME/bin:$PATH"
 
 MIN_SDK=34
 TARGET_SDK=37
-VERSION_CODE="${VERSION_CODE:-1}"
+VERSION_CODE="${VERSION_CODE:-101}"
 VERSION_NAME="${VERSION_NAME:-1.0}"
 OUT="build-wear"
 if [ -n "${DEBUG_BUILD:-}" ]; then
