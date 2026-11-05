@@ -2,8 +2,9 @@
 # (Actions → Play release → Run workflow). The Wear OS bundle is not released from here.
 #
 # Two jobs, so build code never runs next to the release credentials:
-#   build  runs hr-buzz/test.sh and hr-buzz/build.sh (aapt2, javac, d8, bundletool; no Gradle). It has
-#          NO secrets and NO Play access: build.sh signs with a throwaway key generated on the spot.
+#   build  runs hr-buzz/test.sh and hr-buzz/ondevice/build.sh release: the build Play gets since 2.4
+#          (Gradle, with the ML Kit on-device coach; ./build.sh alone makes the small build without it).
+#          It has NO secrets and NO Play access: it signs with a throwaway key generated on the spot.
 #   play   installs nothing. In the protected `production` environment (your approval, `main` only)
 #          it re-signs the bundle with the real upload key using the JDK's own jarsigner, checks the
 #          certificate fingerprint, then gets a one-hour Play token from Google through Workload
@@ -11,6 +12,7 @@
 #
 # Actions:
 #   status              read-only: list the Play tracks and releases (good first test of the setup)
+#   build-check         build only and keep the throwaway-signed .aab for a day (no secrets, no approval)
 #   upload-internal     build, then upload to the internal testing track
 #   promote-production  point production at an already-uploaded versionCode (no build)
 #
@@ -31,7 +33,7 @@ on:
       action:
         description: What to do
         type: choice
-        options: [status, upload-internal, promote-production]
+        options: [status, build-check, upload-internal, promote-production]
         default: status
       internal_status:
         description: "upload-internal: release status on the internal track"
@@ -61,14 +63,12 @@ env:
   PACKAGE: com.enftc.hrbuzz
   # Public certificate fingerprint of the Play upload key (~/.config/hrbuzz-signing/hrbuzz-upload.jks).
   UPLOAD_CERT_SHA256: "60:A8:B6:6D:42:95:83:F9:0D:74:BD:77:84:01:3A:AD:81:E8:67:89:FC:AA:E9:F0:5D:BE:2F:B1:00:75:5D:FF"
-  BUNDLETOOL_VERSION: "1.18.3"
-  BUNDLETOOL_SHA256: a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29
 
 jobs:
   build:
-    if: inputs.action == 'upload-internal'
+    if: inputs.action == 'build-check' || inputs.action == 'upload-internal'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: read
     outputs:
@@ -88,43 +88,44 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      # build.sh wants platform android-37.0 and the newest build-tools it finds.
+      # Same Gradle as on the owner's machine (ondevice/build.sh picks the newest local Gradle 9).
+      - uses: gradle/actions/setup-gradle@8da46b539cd8fe6ab27ca75128919a18d757604c # v6.4.1
+        with:
+          gradle-version: "9.7.1"
+
+      # compileSdk 37; ondevice/build.sh checks the result with the newest build-tools' aapt2.
       - name: Android SDK packages
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
             "platforms;android-37.0" "build-tools;37.0.0" > /dev/null
           ls "$ANDROID_HOME/platforms/android-37.0/android.jar"
 
-      - name: bundletool (Google's release jar, checksum pinned)
-        run: |
-          curl -fsSL -o "$RUNNER_TEMP/bundletool.jar" \
-            "https://github.com/google/bundletool/releases/download/$BUNDLETOOL_VERSION/bundletool-all-$BUNDLETOOL_VERSION.jar"
-          echo "$BUNDLETOOL_SHA256  $RUNNER_TEMP/bundletool.jar" | sha256sum -c -
-
       - name: Tests
         run: ./test.sh
 
+      # ondevice/build.sh refuses a result not signed by "CN=HR Buzz Upload", hence the name. The play
+      # job checks the real key's SHA-256, so a bundle signed with this key can never reach Play.
       - name: Throwaway signing key
         run: |
           umask 077
           d="$RUNNER_TEMP/throwaway"; mkdir -p "$d"
           pw=$(openssl rand -hex 16)
           keytool -genkeypair -keystore "$d/hrbuzz-upload.jks" -storepass "$pw" -keypass "$pw" \
-            -alias upload -keyalg RSA -keysize 2048 -validity 1 -dname CN=throwaway -noprompt
+            -alias upload -keyalg RSA -keysize 2048 -validity 1 -dname 'CN=HR Buzz Upload, OU=CI throwaway' -noprompt
           printf 'alias=upload\npassword=%s\n' "$pw" > "$d/upload.properties"
 
       - name: Build the release bundle
         env:
           HRBUZZ_SIGNING_DIR: ${{ runner.temp }}/throwaway
-          BUNDLETOOL: ${{ runner.temp }}/bundletool.jar
         run: |
-          ./build.sh
-          [ -s hr-buzz-release.aab ] || { echo "no bundle was built"; exit 1; }
+          export GRADLE="$(command -v gradle)"
+          ondevice/build.sh release
+          [ -s hr-buzz-ondevice-release.aab ] || { echo "no bundle was built"; exit 1; }
 
       - name: Version and checksum
         id: meta
         run: |
-          cp hr-buzz-release.aab "$RUNNER_TEMP/app-release.aab"
+          cp hr-buzz-ondevice-release.aab "$RUNNER_TEMP/app-release.aab"
           {
             echo "version_code=$(sed -n 's/^VERSION_CODE="\${VERSION_CODE:-\([0-9]*\)}"$/\1/p' build.sh)"
             echo "version_name=$(sed -n 's/^VERSION_NAME="\${VERSION_NAME:-\([^}]*\)}"$/\1/p' build.sh)"
@@ -142,8 +143,8 @@ jobs:
 
   play:
     needs: build
-    # Runs for status/promote (build skipped) and after a successful build.
-    if: ${{ !cancelled() && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
+    # Runs for status/promote (build skipped) and after a successful build; never for build-check.
+    if: ${{ !cancelled() && inputs.action != 'build-check' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment: production
