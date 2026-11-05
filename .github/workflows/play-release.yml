@@ -1,0 +1,226 @@
+# Google Play releases for com.enftc.hrbuzz (the phone app in hr-buzz/), started by hand
+# (Actions → Play release → Run workflow). The Wear OS bundle is not released from here.
+#
+# Two jobs, so build code never runs next to the release credentials:
+#   build  runs hr-buzz/test.sh and hr-buzz/build.sh (aapt2, javac, d8, bundletool; no Gradle). It has
+#          NO secrets and NO Play access: build.sh signs with a throwaway key generated on the spot.
+#   play   installs nothing. In the protected `production` environment (your approval, `main` only)
+#          it re-signs the bundle with the real upload key using the JDK's own jarsigner, checks the
+#          certificate fingerprint, then gets a one-hour Play token from Google through Workload
+#          Identity Federation (no key file anywhere) and runs hr-buzz/scripts/play/*.sh.
+#
+# Actions:
+#   status              read-only: list the Play tracks and releases (good first test of the setup)
+#   upload-internal     build, then upload to the internal testing track
+#   promote-production  point production at an already-uploaded versionCode (no build)
+#
+# Version: the VERSION_CODE / VERSION_NAME defaults in hr-buzz/build.sh; bump them for every upload
+# (Play rejects a reused versionCode).
+#
+# Setup: Google side = pool `github`, provider `hrbuzz-production` (accepts only this repository's id,
+# environment `production`, ref main, workflow_dispatch and this workflow file), service account
+# `play-ci-hrbuzz` (no keys) invited in Play Console for this app only. GitHub side = environment
+# `production` with required reviewer and branch `main`, its secrets ANDROID_UPLOAD_KEYSTORE_B64,
+# ANDROID_KEYSTORE_PASSWORD, ANDROID_KEY_ALIAS, ANDROID_KEY_PASSWORD, and repository variables
+# GCP_WIF_PROVIDER + PLAY_SERVICE_ACCOUNT.
+name: Play release
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: What to do
+        type: choice
+        options: [status, upload-internal, promote-production]
+        default: status
+      internal_status:
+        description: "upload-internal: release status on the internal track"
+        type: choice
+        options: [completed, draft]
+        default: completed
+      version_code:
+        description: "promote-production: versionCode already on Play (e.g. 7)"
+        type: string
+        required: false
+      version_name:
+        description: "promote-production: its version name (e.g. 2.5)"
+        type: string
+        required: false
+      release_notes:
+        description: "promote-production: en-GB release notes (empty = keep the current ones)"
+        type: string
+        required: false
+
+permissions: {}
+
+concurrency:
+  group: play-release
+  cancel-in-progress: false
+
+env:
+  PACKAGE: com.enftc.hrbuzz
+  # Public certificate fingerprint of the Play upload key (~/.config/hrbuzz-signing/hrbuzz-upload.jks).
+  UPLOAD_CERT_SHA256: "60:A8:B6:6D:42:95:83:F9:0D:74:BD:77:84:01:3A:AD:81:E8:67:89:FC:AA:E9:F0:5D:BE:2F:B1:00:75:5D:FF"
+  BUNDLETOOL_VERSION: "1.18.3"
+  BUNDLETOOL_SHA256: a099cfa1543f55593bc2ed16a70a7c67fe54b1747bb7301f37fdfd6d91028e29
+
+jobs:
+  build:
+    if: inputs.action == 'upload-internal'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    outputs:
+      version_code: ${{ steps.meta.outputs.version_code }}
+      version_name: ${{ steps.meta.outputs.version_name }}
+      sha256: ${{ steps.meta.outputs.sha256 }}
+    defaults:
+      run:
+        working-directory: hr-buzz
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      # build.sh wants platform android-37.0 and the newest build-tools it finds.
+      - name: Android SDK packages
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install \
+            "platforms;android-37.0" "build-tools;37.0.0" > /dev/null
+          ls "$ANDROID_HOME/platforms/android-37.0/android.jar"
+
+      - name: bundletool (Google's release jar, checksum pinned)
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/bundletool.jar" \
+            "https://github.com/google/bundletool/releases/download/$BUNDLETOOL_VERSION/bundletool-all-$BUNDLETOOL_VERSION.jar"
+          echo "$BUNDLETOOL_SHA256  $RUNNER_TEMP/bundletool.jar" | sha256sum -c -
+
+      - name: Tests
+        run: ./test.sh
+
+      - name: Throwaway signing key
+        run: |
+          umask 077
+          d="$RUNNER_TEMP/throwaway"; mkdir -p "$d"
+          pw=$(openssl rand -hex 16)
+          keytool -genkeypair -keystore "$d/hrbuzz-upload.jks" -storepass "$pw" -keypass "$pw" \
+            -alias upload -keyalg RSA -keysize 2048 -validity 1 -dname CN=throwaway -noprompt
+          printf 'alias=upload\npassword=%s\n' "$pw" > "$d/upload.properties"
+
+      - name: Build the release bundle
+        env:
+          HRBUZZ_SIGNING_DIR: ${{ runner.temp }}/throwaway
+          BUNDLETOOL: ${{ runner.temp }}/bundletool.jar
+        run: |
+          ./build.sh
+          [ -s hr-buzz-release.aab ] || { echo "no bundle was built"; exit 1; }
+
+      - name: Version and checksum
+        id: meta
+        run: |
+          cp hr-buzz-release.aab "$RUNNER_TEMP/app-release.aab"
+          {
+            echo "version_code=$(sed -n 's/^VERSION_CODE="\${VERSION_CODE:-\([0-9]*\)}"$/\1/p' build.sh)"
+            echo "version_name=$(sed -n 's/^VERSION_NAME="\${VERSION_NAME:-\([^}]*\)}"$/\1/p' build.sh)"
+            echo "sha256=$(sha256sum "$RUNNER_TEMP/app-release.aab" | cut -d' ' -f1)"
+          } >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+          grep -qE '^version_code=[0-9]+$' "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: aab-throwaway-signed
+          path: ${{ runner.temp }}/app-release.aab
+          retention-days: 1
+          if-no-files-found: error
+
+  play:
+    needs: build
+    # Runs for status/promote (build skipped) and after a successful build.
+    if: ${{ !cancelled() && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          sparse-checkout: hr-buzz/scripts/play
+
+      - if: inputs.action == 'upload-internal'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: aab-throwaway-signed
+          path: ${{ runner.temp }}/aab
+
+      - name: Re-sign with the upload key
+        if: inputs.action == 'upload-internal'
+        env:
+          EXPECTED_SHA256: ${{ needs.build.outputs.sha256 }}
+          KEYSTORE_B64: ${{ secrets.ANDROID_UPLOAD_KEYSTORE_B64 }}
+          STORE_PW: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PW: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          umask 077
+          aab="$RUNNER_TEMP/aab/app-release.aab"
+          echo "$EXPECTED_SHA256  $aab" | sha256sum -c -
+          JB="${JAVA_HOME_21_X64:?no preinstalled JDK 21 on this runner}/bin"
+          ks="$RUNNER_TEMP/upload.jks"
+          trap 'rm -f "$ks"' EXIT
+          printf %s "$KEYSTORE_B64" | base64 -d > "$ks"
+          # Remove the throwaway signature (only the JAR-signing files at the bundle root).
+          zip -q -d "$aab" 'META-INF/MANIFEST.MF' 'META-INF/*.SF' 'META-INF/*.RSA' 'META-INF/*.EC' 'META-INF/*.DSA'
+          "$JB/jarsigner" -keystore "$ks" -storepass:env STORE_PW -keypass:env KEY_PW \
+            -sigalg SHA256withRSA -digestalg SHA-256 "$aab" "$KEY_ALIAS" > /dev/null
+          "$JB/jarsigner" -verify "$aab" > "$RUNNER_TEMP/verify.txt"
+          grep -q 'jar verified.' "$RUNNER_TEMP/verify.txt"
+          got=$("$JB/keytool" -printcert -jarfile "$aab" | sed -n 's/^[[:space:]]*SHA256: //p')
+          [ "$got" = "$UPLOAD_CERT_SHA256" ] || { echo "signed with the wrong certificate: $got"; exit 1; }
+          echo "signed with the upload key ($UPLOAD_CERT_SHA256)"
+
+      - name: Get a Play token (Workload Identity Federation)
+        id: google
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.PLAY_SERVICE_ACCOUNT }}
+          token_format: access_token
+          access_token_scopes: https://www.googleapis.com/auth/androidpublisher
+          create_credentials_file: false
+
+      - name: Run ${{ inputs.action }}
+        working-directory: hr-buzz/scripts/play
+        env:
+          PLAY_ACCESS_TOKEN: ${{ steps.google.outputs.access_token }}
+          ACTION: ${{ inputs.action }}
+          INTERNAL_STATUS: ${{ inputs.internal_status }}
+          BUILD_CODE: ${{ needs.build.outputs.version_code }}
+          BUILD_NAME: ${{ needs.build.outputs.version_name }}
+          VERSION_CODE: ${{ inputs.version_code }}
+          VERSION_NAME: ${{ inputs.version_name }}
+          RELEASE_NOTES: ${{ inputs.release_notes }}
+        run: |
+          set -euo pipefail
+          case "$ACTION" in
+            status)
+              bash ./play-status.sh "$PACKAGE" ;;
+            upload-internal)
+              bash ./play-upload.sh "$PACKAGE" "$RUNNER_TEMP/aab/app-release.aab" internal \
+                "$INTERNAL_STATUS" "$BUILD_CODE ($BUILD_NAME)" ;;
+            promote-production)
+              [[ "$VERSION_CODE" =~ ^[0-9]+$ ]] || { echo "version_code must be a number"; exit 1; }
+              [[ "$VERSION_NAME" =~ ^[0-9A-Za-z.+-]+$ ]] || { echo "version_name looks wrong"; exit 1; }
+              bash ./play-production.sh "$PACKAGE" "$VERSION_CODE" "$VERSION_NAME" "$RELEASE_NOTES" ;;
+            *) echo "unknown action $ACTION"; exit 1 ;;
+          esac
