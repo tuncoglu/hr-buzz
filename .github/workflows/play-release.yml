@@ -16,6 +16,8 @@
 #   status              read-only: list the Play tracks and releases (good first test of the setup)
 #   build-check         build only and keep the throwaway-signed .aab for a day (no secrets, no approval)
 #   upload-internal     build, then upload to the internal testing track
+#   promote-internal    point the internal track at an already-uploaded versionCode as a completed release
+#                       (no build; for a draft that could not be completed, e.g. before a declaration was done)
 #   promote-production  point production at an already-uploaded versionCode (no build)
 #
 # Version: the VERSION_CODE / VERSION_NAME defaults in hr-buzz/build.sh (phone) or hr-buzz/build-wear.sh
@@ -36,7 +38,7 @@ on:
       action:
         description: What to do
         type: choice
-        options: [status, build-check, upload-internal, promote-production]
+        options: [status, build-check, upload-internal, promote-internal, promote-production]
         default: status
       app:
         description: "Which bundle: the phone app or the Wear OS watch app (watch uses the wear:* tracks)"
@@ -252,6 +254,10 @@ jobs:
             upload-internal)
               bash ./play-upload.sh "$PACKAGE" "$RUNNER_TEMP/aab/app-release.aab" "$internal" \
                 "$INTERNAL_STATUS" "$BUILD_CODE ($BUILD_NAME)" ;;
+            promote-internal)
+              [[ "$VERSION_CODE" =~ ^[0-9]+$ ]] || { echo "version_code must be a number"; exit 1; }
+              [[ "$VERSION_NAME" =~ ^[0-9A-Za-z.+-]+$ ]] || { echo "version_name looks wrong"; exit 1; }
+              bash ./play-production.sh "$PACKAGE" "$VERSION_CODE" "$VERSION_NAME" "$RELEASE_NOTES" "$internal" ;;
             promote-production)
               [[ "$VERSION_CODE" =~ ^[0-9]+$ ]] || { echo "version_code must be a number"; exit 1; }
               [[ "$VERSION_NAME" =~ ^[0-9A-Za-z.+-]+$ ]] || { echo "version_name looks wrong"; exit 1; }
