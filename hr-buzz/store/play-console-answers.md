@@ -27,6 +27,13 @@ All reads, no writes:
 - `location`: records distance, pace and route while the screen is off during a GPS sport.
 - Video: record a short screen capture of starting a run, locking the phone, and the notification staying up.
 
+## Foreground services (watch, `wear:*` tracks, versionCode 101+)
+Phone types are declared (connectedDevice, location; one YouTube Short serves both). The form lists a type only after a bundle that uses it is on Play, so after the first watch upload it shows two more as undeclared:
+- `FOREGROUND_SERVICE_HEALTH` (`WearService`, with location): reads the watch's own optical heart-rate sensor and counts steps while a run is on and the screen is off, to give the zone alerts (buzz) and record the session. Pick the health-monitoring / "other" task the form offers and describe it this way.
+- `FOREGROUND_SERVICE_DATA_SYNC` (`WorkService`): short job that sends one coach request and stores the answer (the morning plan, the run debrief), visible as an ongoing notification while it runs; it ends by itself.
+- `FOREGROUND_SERVICE_LOCATION`: already declared; the watch uses it for distance and pace during a GPS run.
+- Video (one clip can serve both new boxes, upload it as an unlisted YouTube video or Short): start a run on the watch, let the screen turn off, show the ongoing notification and a zone buzz, wake it, end the run; then ask the coach and show its notification. The on-screen part can be captured with `adb shell screenrecord` over Wi-Fi adb; the screen-off part needs a phone camera.
+
 ## Restricted permission: `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`
 Core function: a heart-rate alarm and session recording that must keep running for hours with the screen off. The app asks once, with a one-tap prompt and a fallback to the settings page. Before sending the form, test a long session with the permission denied and write what actually breaks (the README only measured delays before the wake lock was added, so it is not evidence for this). If you cannot show a failure, or the review does not accept it, remove the permission and keep only the fallback.
 
