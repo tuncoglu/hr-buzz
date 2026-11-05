@@ -179,6 +179,8 @@ Requires `ANDROID_HOME` (defaults to `/opt/android-sdk`) and a JDK (`JAVA_HOME`,
 
 **Bundles.** The `.aab` step needs bundletool: either a `bundletool-all-*.jar` saved as `~/.cache/polar-hr-toolchain/bundletool.jar`, or a launcher script `bundletool` beside it that runs the jars Gradle has already downloaded into `~/.gradle` (bundletool 1.18.3 with Guava 32.0.1-jre; the Android flavour of Guava crashes it). Without either, a release build makes the APK only and says so.
 
+**Releasing from GitHub.** Actions → **Play release** → Run workflow, on `main` (`.github/workflows/play-release.yml`): `status` lists the Play tracks, `build-check` builds without secrets or approval, `upload-internal` builds `ondevice/build.sh release` and uploads it to internal testing, `promote-production` points production at an uploaded versionCode. The build job signs with a throwaway key; the `play` job runs in the `production` environment (your approval, `main` only), re-signs with the upload key from the environment secrets, checks its SHA-256 and gets a one-hour Play token through Workload Identity Federation (provider `hrbuzz-production`, service account `play-ci-hrbuzz`, no key file). Bump the defaults in `build.sh` before every upload. The watch bundle is not released from there.
+
 ## Layout
 
 | Path | What |
