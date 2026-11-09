@@ -52,6 +52,22 @@ code {{ font-family:ui-monospace, monospace; font-size:.92em; }}
 table {{ border-collapse:collapse; width:100%; font-size:.95rem; }}
 th, td {{ border:1px solid var(--line); padding:.5rem .6rem; text-align:left; vertical-align:top; }}
 em {{ color:var(--muted); }}
+.store-links {{ margin:1.5rem 0; }}
+.store-label {{ margin:0 0 8px; color:var(--muted); font-size:13px; font-weight:700; letter-spacing:1px; text-transform:uppercase; }}
+.store-buttons {{ display:flex; flex-wrap:wrap; gap:10px; }}
+.store-button {{ display:inline-flex; flex-direction:column; align-items:flex-start; justify-content:center; gap:1px;
+  min-height:48px; min-width:150px; padding:6px 16px; border:1px solid var(--line); border-radius:8px;
+  background:var(--bg); color:var(--fg); font:inherit; text-decoration:none; text-align:left; cursor:pointer; }}
+.store-button:hover {{ border-color:var(--fg); }}
+.store-small {{ font-size:11px; color:var(--muted); line-height:1.2; }}
+.store-name {{ font-size:17px; font-weight:700; letter-spacing:-.3px; line-height:1.2; }}
+.store-dialog {{ max-width:min(460px, calc(100vw - 32px)); margin:auto; border:1px solid var(--line); border-radius:12px;
+  background:var(--bg); color:var(--fg); padding:24px; }}
+.store-dialog::backdrop {{ background:rgb(0 0 0 / .6); }}
+.store-dialog h2 {{ font-size:20px; margin:0 0 10px; }}
+.store-dialog p {{ margin:0; color:var(--muted); font-size:14px; line-height:1.55; }}
+.store-close {{ margin-top:18px; min-height:44px; padding:0 18px; font:inherit; font-weight:700; border:0; border-radius:10px;
+  background:var(--accent); color:#fff; cursor:pointer; }}
 </style>
 </head>
 <body>
@@ -64,6 +80,20 @@ em {{ color:var(--muted); }}
 
 INDEX = """<h1>HR Buzz</h1>
 <p>A heart-rate training app for Bluetooth chest straps, published by ENFTC.</p>
+<section class="store-links" aria-label="Get the app">
+<p class="store-label">Get the app</p>
+<div class="store-buttons">
+<a class="store-button" href="https://play.google.com/store/apps/details?id=com.enftc.hrbuzz&amp;referrer=utm_source%3Dhrbuzz.sourdoughcalculator.uk%26utm_medium%3Dwebsite">
+<span class="store-small">Get it on</span><span class="store-name">Google Play</span></a>
+<button type="button" class="store-button" popovertarget="ios-soon">
+<span class="store-small">Download on the</span><span class="store-name">App Store</span></button>
+</div>
+<div popover id="ios-soon" role="dialog" class="store-dialog" aria-labelledby="ios-soon-title">
+<h2 id="ios-soon-title">Not on iPhone yet</h2>
+<p>HR Buzz runs on Android phones and Wear OS watches for now. There is no iPhone version yet, and no web version you could add to your Home Screen.</p>
+<button type="button" class="store-close" popovertarget="ios-soon" popovertargetaction="hide" autofocus>Got it</button>
+</div>
+</section>
 <p><a href="/keys/">Getting an API key for the coach, and what it costs</a><br>
 <a href="/privacy/">Privacy policy</a></p>
 """
