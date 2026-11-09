@@ -6,6 +6,11 @@ api-keys.md (how to get a key, and what it costs) at .../keys/.
     deploy-privacy.py deploy    render, then create/update the Cloudflare Pages project
                                 "hr-buzz", attach the domain and its DNS record
 
+The landing page also carries a Google Play button (com.enftc.hrbuzz) and an App Store button whose dialog says there is no iPhone version (HR Buzz is a native Android app, no web version). Nothing is counted.
+
+Since the 2026-11-04 credentials audit ~/.cf-token no longer exists, so `deploy` does not work as written. Render, then deploy the folder with `wrangler login` and
+`wrangler pages deploy store/site --project-name hr-buzz --branch main` (done this way on 2026-11-09).
+
 A separate Pages project, so the sourdough site (deployed from its own repo) is never touched.
 The Cloudflare token is read from ~/.cf-token inside this script and never printed. The account and
 zone ids are not in the repository: put {"account_id": "...", "zone_id": "..."} in
